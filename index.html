@@ -1004,7 +1004,8 @@ Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
     sync.unsub.forEach(f => f()); sync.unsub = []; sync.synced = new Map(); sync.metaSynced = "";
     sync.user = u ? { uid:u.uid, email:u.email || u.displayName || "" } : null;
     ls.set("pal-sync-on", u ? "1" : "");
-    if (!u){ setSyncStatus(""); return; }
+    if (!u){ if (!sync.signingIn) setSyncStatus(""); return; }
+    sync.signingIn = false;
     setSyncStatus("A sincronizar…");
     const { F, fdb } = sync.fb;
     const [snap, metaSnap] = await Promise.all([F.getDocs(F.collection(fdb, "users", u.uid, "days")), F.getDoc(userRef())]);
@@ -1065,6 +1066,9 @@ Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
       if (sync.user){ if (confirm("Sair da conta? Os dados ficam neste aparelho, mas deixam de sincronizar.")) await A.signOut(auth); return; }
       ls.set("pal-sync-on", "1");
       setSyncStatus("A abrir a janela da Google… escolhe a tua conta.");
+      sync.signingIn = true;
+      // Alguns browsers (Safari) não devolvem o resultado da janela: avisa em vez de ficar à espera para sempre
+      const slow = setTimeout(() => { if (!sync.user) setSyncStatus("O login não chegou à app. Se usas o Safari, o bloqueio de rastreamento entre sites impede o login: experimenta o Chrome ou o Firefox."); }, 60000);
       try { await A.signInWithPopup(auth, new A.GoogleAuthProvider()); }
       catch(e){
         if (e?.code === "auth/popup-blocked" || e?.code === "auth/operation-not-supported-in-this-environment") return A.signInWithRedirect(auth, new A.GoogleAuthProvider());
@@ -1074,6 +1078,7 @@ Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
         }
         throw e;
       }
+      finally { clearTimeout(slow); sync.signingIn = false; }
     } catch(e){
       if (!sync.user) ls.set("pal-sync-on", "");
       setSyncStatus(e?.code === "auth/unauthorized-domain" ? "Este domínio não está autorizado no Firebase (Authentication → Settings → Authorized domains)." : "Não consegui entrar: " + (e?.code || e?.message || e));
