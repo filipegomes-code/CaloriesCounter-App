@@ -114,11 +114,35 @@ textarea{resize:vertical;min-height:60px}
 .daytotal{font-size:14px;color:var(--muted)}
 .daytotal b{color:var(--ink);font-family:var(--f-num);font-weight:500}
 .meals{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:14px}
-.meal{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:8px;padding:10px 12px;border-top:1px solid var(--line)}
+.meals:empty{display:none}
+.meal{border-top:1px solid var(--line)}
 .meal:first-child{border-top:0}
+.meal summary{display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;list-style:none}
+.meal summary::-webkit-details-marker{display:none}
+.meal summary>.num::after{content:" ▾";color:var(--muted);font-size:11px}
+.meal[open] summary>.num::after{content:" ▴"}
 .meal .mt{min-width:0}
 .meal .mt div{font-size:12.5px;color:var(--muted)}
+.mitems{padding:0 12px 12px;display:flex;flex-direction:column;gap:6px}
+.mitem{display:grid;grid-template-columns:1fr auto auto auto;align-items:center;gap:8px;font-size:14px}
+.mitem .iname{font-weight:500;overflow-wrap:anywhere}
+.btn-sm{min-height:40px;padding:8px 12px;font-size:14px}
 .empty{color:var(--muted);font-size:14px;padding:14px;text-align:center}
+
+/* Calendário */
+.cal-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.cal-h{text-align:center;font-size:11px;color:var(--muted);font-weight:600;padding-bottom:2px}
+.cal-d{appearance:none;border:1px solid transparent;background:none;color:var(--ink);border-radius:10px;min-height:48px;padding:5px 1px;display:flex;flex-direction:column;align-items:center;gap:1px;font:500 14px var(--f-body);cursor:pointer;position:relative;touch-action:manipulation}
+.cal-d small{font-size:10px;color:var(--muted)}
+.cal-d.has{background:var(--sunk)}
+.cal-d.today span{font-weight:700;color:var(--accent)}
+.cal-d.sel{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.cal-d:focus-visible{outline:3px solid var(--accent);outline-offset:1px}
+.open-dot{position:absolute;top:5px;right:5px;width:6px;height:6px;border-radius:50%;background:var(--accent)}
+.cal-detail{display:flex;flex-direction:column;gap:10px}
+.cal-detail h3{font:600 16px var(--f-display);margin:0}
+.cal-detail h3::first-letter{text-transform:uppercase}
 
 /* Definições */
 dialog{border:0;border-radius:18px;padding:0;background:var(--surface);color:var(--ink);width:min(520px,calc(100% - 32px))}
@@ -184,8 +208,22 @@ dialog form{padding:18px;display:flex;flex-direction:column;gap:14px}
   <section class="label" id="result" aria-live="polite"></section>
 
   <section class="card" style="background:transparent;border:0;padding:0" aria-labelledby="day-title">
-    <div class="day-head"><h2 id="day-title">Hoje</h2><div class="daytotal" id="dayTotal"></div></div>
+    <div class="day-head"><h2 id="day-title">Dia</h2><div class="daytotal" id="dayTotal"></div></div>
+    <p class="small" id="dayInfo"></p>
+    <div class="notice warn" id="longDay" hidden></div>
     <div class="meals" id="meals"></div>
+    <button class="btn" id="dayBtn" type="button"></button>
+  </section>
+
+  <section class="card" aria-labelledby="calTitle">
+    <div class="cal-head">
+      <button class="icon-btn" type="button" data-act="cal-prev" aria-label="Mês anterior">‹</button>
+      <h2 id="calTitle"></h2>
+      <button class="icon-btn" type="button" data-act="cal-next" aria-label="Mês seguinte">›</button>
+    </div>
+    <p class="small" id="calAvg"></p>
+    <div class="cal" id="cal"></div>
+    <div class="cal-detail" id="calDetail"></div>
   </section>
 
   <p class="small">Estimativas. Erro típico de 10–25% em pratos simples, mais em pratos misturados ou com molhos. Se pesares algum alimento, corrige as gramas.</p>
@@ -226,6 +264,14 @@ dialog form{padding:18px;display:flex;flex-direction:column;gap:14px}
       <p class="small">Cria a chave em console.anthropic.com e define um limite de gastos. Cerca de 1–3 cêntimos por análise.</p>
     </div>
     <p class="small">As chaves ficam guardadas só neste telemóvel e só são enviadas para o serviço escolhido.</p>
+    <div class="rule"></div>
+    <div class="eyebrow">Cópia de segurança</div>
+    <div class="btnrow">
+      <button class="btn btn-ghost btn-sm" id="exportBtn" type="button">Exportar</button>
+      <button class="btn btn-ghost btn-sm" id="importBtn" type="button">Importar</button>
+    </div>
+    <input id="importFile" class="vh" type="file" accept="application/json,.json" tabindex="-1" aria-hidden="true">
+    <p class="small">Guarda os dias e as refeições num ficheiro JSON (sem as chaves). Importar substitui os dias deste aparelho.</p>
     <div class="btnrow">
       <button class="btn btn-primary" value="save" type="submit">Guardar</button>
       <button class="btn btn-ghost" value="cancel" type="submit" formnovalidate>Cancelar</button>
@@ -537,32 +583,224 @@ Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
           ${i.nota?`<div class="note">${esc(i.nota)}</div>`:""}</div>`).join("")}
       </div></div>
       ${current.avisos?.length?`<ul class="warnings">${current.avisos.map(a=>`<li>${esc(a)}</li>`).join("")}</ul>`:""}
-      ${current.exemplo?"":`<button class="btn btn-primary" id="save" type="button">Guardar em “Hoje”</button>`}`;
+      ${current.exemplo?"":`<button class="btn btn-primary" id="save" type="button">Guardar refeição</button>`}`;
     el.querySelectorAll("input[data-idx]").forEach(inp => inp.addEventListener("change", () => {
       const it = current.itens[+inp.dataset.idx], g = num(inp.value); it.gramas = g;
       for (const k of ["kcal","proteina","hidratos","gordura","fibra"]) it[k] = it.per[k]*g;
       renderResult();
     }));
     el.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => { current.itens.splice(+b.dataset.del,1); renderResult(); }));
-    const s = $("save"); if (s) s.addEventListener("click", () => { saveMeal(); s.disabled = true; s.textContent = "Guardado"; });
+    const s = $("save"); if (s) s.addEventListener("click", () => { if (saveMeal()){ s.disabled = true; s.textContent = "Guardado"; } });
   }
 
-  // ---------- dia ----------
-  const dayKey = () => "pal-" + new Date().toLocaleDateString("sv-SE");
-  let day = (() => { try { return JSON.parse(ls.get(dayKey(),"[]")); } catch { return []; } })();
-  const storeDay = () => ls.set(dayKey(), JSON.stringify(day));
+  // ---------- dias (começar/terminar à mão; o dia fica na data em que começou) ----------
+  const DB_KEY = "pal-days-v1", LONG_DAY_H = 20, MACROS = ["kcal","proteina","hidratos","gordura","fibra"];
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+  const pad = n => String(n).padStart(2,"0");
+  const dateStr = ts => { const d = new Date(ts); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; };
+  const hhmm = ts => new Date(ts).toLocaleTimeString("pt-PT",{hour:"2-digit",minute:"2-digit"});
+  const dateLong = ds => new Date(ds+"T12:00").toLocaleDateString("pt-PT",{weekday:"long",day:"numeric",month:"long"});
+  const dateShort = ds => new Date(ds+"T12:00").toLocaleDateString("pt-PT",{day:"numeric",month:"short"});
+  const mealTime = m => m.ts ? hhmm(m.ts) : (m.hora || "");
+
+  function cleanItem(i){
+    const it = { nome:String(i?.nome||"Alimento"), gramas:num(i?.gramas) };
+    for (const k of MACROS) it[k] = num(i?.[k]);
+    it.per = i?.per && typeof i.per === "object" ? Object.fromEntries(MACROS.map(k => [k, num(i.per[k])])) : null;
+    return it;
+  }
+  function cleanDb(d){
+    const days = (Array.isArray(d?.days) ? d.days : []).filter(x => x && /^\d{4}-\d{2}-\d{2}$/.test(x.date)).map(x => ({
+      id:String(x.id||uid()), date:x.date, start:num(x.start) || new Date(x.date+"T00:00").getTime(), end: x.end == null ? null : num(x.end),
+      meals:(Array.isArray(x.meals) ? x.meals : []).map(m => ({ id:String(m?.id||uid()), nome:String(m?.nome||"Refeição"), ts:num(m?.ts)||null, hora:String(m?.hora||""),
+        itens:(Array.isArray(m?.itens) ? m.itens : []).map(cleanItem) }))
+    })).sort((a,b) => a.start - b.start);
+    // só pode haver um dia aberto
+    const open = days.find(x => x.id === d?.open && x.end == null);
+    for (const x of days) if (x.end == null && x !== open) x.end = Math.max(x.start, ...x.meals.map(m => m.ts || 0));
+    return { open: open ? open.id : null, days };
+  }
+  // Versão anterior: uma lista de refeições por data em "pal-AAAA-MM-DD", só com totais.
+  function migrateLegacy(){
+    const days = [];
+    try {
+      for (let i = 0; i < localStorage.length; i++){
+        const m = /^pal-(\d{4}-\d{2}-\d{2})$/.exec(localStorage.key(i) || ""); if (!m) continue;
+        const meals = JSON.parse(localStorage.getItem(m[0]) || "[]"); if (!Array.isArray(meals) || !meals.length) continue;
+        const start = new Date(m[1]+"T00:00").getTime();
+        days.push({ id:uid(), date:m[1], start, end:start + 86399000, meals: meals.map(x => ({ id:uid(), nome:x.nome, hora:x.hora,
+          itens:[{ nome:x.nome, gramas:0, kcal:x.kcal, proteina:x.proteina, hidratos:x.hidratos, gordura:x.gordura }] })) });
+      }
+    } catch {}
+    return cleanDb({ open:null, days });
+  }
+  let db = (() => { const raw = ls.get(DB_KEY, null); if (raw){ try { return cleanDb(JSON.parse(raw)); } catch {} } return migrateLegacy(); })();
+  const saveDb = () => ls.set(DB_KEY, JSON.stringify(db));
+  saveDb();
+
+  const openDay = () => db.days.find(d => d.id === db.open) || null;
+  const dayTotals = d => totals(d.meals.flatMap(m => m.itens));
+  const findDay = id => db.days.find(d => d.id === id);
+  const openMeals = new Set();      // refeições expandidas, para não fecharem ao redesenhar
+  let cal = { y:new Date().getFullYear(), m:new Date().getMonth() }, selDate = dateStr(Date.now());
+
+  // Abre um dia (ou reabre o de hoje, se já existir). Devolve o dia aberto ou null se cancelado.
+  function beginDay(question){
+    const now = Date.now(), ds = dateStr(now), prev = db.days.find(d => d.date === ds);
+    if (!confirm(prev ? `${question}\n\nJá há um dia registado em ${dateShort(ds)}; vai ser reaberto.` : question)) return null;
+    if (prev){ prev.end = null; db.open = prev.id; }
+    else { const d = { id:uid(), date:ds, start:now, end:null, meals:[] }; db.days.push(d); db.open = d.id; }
+    saveDb(); return openDay();
+  }
+  function endDay(d){
+    if (!d || d.id !== db.open) return;
+    if (!confirm(`Terminar o dia de ${dateShort(d.date)}? Fica no calendário com ${Math.round(dayTotals(d).kcal)} kcal.`)) return;
+    d.end = Date.now(); db.open = null; saveDb(); renderDays();
+  }
+  function reopenDay(d){
+    if (!d) return;
+    const cur = openDay();
+    if (cur && cur !== d){
+      if (!confirm(`O dia de ${dateShort(cur.date)} ainda está aberto. Terminá-lo e reabrir o de ${dateShort(d.date)}?`)) return;
+      cur.end = Date.now();
+    } else if (!confirm(`Reabrir o dia de ${dateShort(d.date)}? As refeições que guardares a seguir vão para esse dia.`)) return;
+    d.end = null; db.open = d.id; saveDb(); renderDays();
+  }
   function saveMeal(){
-    const t = totals(current.itens);
-    day.push({ nome:current.prato, hora:new Date().toLocaleTimeString("pt-PT",{hour:"2-digit",minute:"2-digit"}), kcal:Math.round(t.kcal), proteina:r1(t.proteina), hidratos:r1(t.hidratos), gordura:r1(t.gordura) });
-    storeDay(); renderDay();
+    if (!current || current.exemplo) return false;
+    const d = openDay() || beginDay("Não há nenhum dia aberto. Começar o dia e guardar esta refeição?");
+    if (!d) return false;
+    d.meals.push({ id:uid(), nome:current.prato, ts:Date.now(), hora:"", itens: current.itens.map(cleanItem) });
+    saveDb(); selDate = d.date; renderDays(); return true;
   }
+
+  function mealHTML(d, m){
+    const t = totals(m.itens), ref = `data-day="${esc(d.id)}" data-meal="${esc(m.id)}"`;
+    return `<details class="meal" data-mid="${esc(m.id)}"${openMeals.has(m.id) ? " open" : ""}>
+      <summary><div class="mt"><strong>${esc(m.nome)}</strong><div class="num">${esc(mealTime(m))} · P ${fmt(t.proteina)} · H ${fmt(t.hidratos)} · G ${fmt(t.gordura)} g</div></div><span class="num">${Math.round(t.kcal)} kcal</span></summary>
+      <div class="mitems">
+        ${m.itens.map((i,k) => `<div class="mitem"><span class="iname">${esc(i.nome)}</span>
+          ${i.per ? `<span class="grams"><input type="number" inputmode="decimal" min="0" step="1" value="${Math.round(i.gramas)}" data-act="grams" ${ref} data-i="${k}" aria-label="Gramas de ${esc(i.nome)}">g</span>` : `<span class="small" title="Registo antigo, sem gramas">—</span>`}
+          <span class="num small">${Math.round(i.kcal)} kcal</span>
+          <button class="icon-btn" type="button" data-act="del-item" ${ref} data-i="${k}" aria-label="Remover ${esc(i.nome)}">×</button></div>`).join("")}
+        <button class="btn btn-ghost btn-sm" type="button" data-act="del-meal" ${ref}>Apagar refeição</button>
+      </div></details>`;
+  }
+  const totalsHTML = t => `<b>${Math.round(t.kcal)}</b> kcal · P <b>${fmt(t.proteina)}</b> · H <b>${fmt(t.hidratos)}</b> · G <b>${fmt(t.gordura)}</b> g`;
+
   function renderDay(){
-    const t = day.reduce((a,m)=>({kcal:a.kcal+m.kcal,p:a.p+m.proteina,h:a.h+m.hidratos,g:a.g+m.gordura}),{kcal:0,p:0,h:0,g:0});
-    $("dayTotal").innerHTML = day.length ? `<b>${t.kcal}</b> kcal · P <b>${fmt(t.p)}</b> · H <b>${fmt(t.h)}</b> · G <b>${fmt(t.g)}</b> g` : "";
-    $("meals").innerHTML = day.length ? day.map((m,i)=>`<div class="meal"><div class="mt"><strong>${esc(m.nome)}</strong><div class="num">${esc(m.hora)} · P ${fmt(m.proteina)} · H ${fmt(m.hidratos)} · G ${fmt(m.gordura)} g</div></div><span class="num">${m.kcal} kcal</span><button class="icon-btn" data-meal="${i}" type="button" aria-label="Apagar ${esc(m.nome)}">×</button></div>`).join("")
-      : `<div class="empty">Ainda sem refeições. Depois de analisar um prato, toca em “Guardar em Hoje”.</div>`;
-    $("meals").querySelectorAll("[data-meal]").forEach(b => b.addEventListener("click", () => { day.splice(+b.dataset.meal,1); storeDay(); renderDay(); }));
+    const d = openDay(), btn = $("dayBtn");
+    btn.dataset.act = d ? "end" : "start"; if (d) btn.dataset.day = d.id; else delete btn.dataset.day;
+    btn.className = "btn " + (d ? "btn-ghost" : "btn-primary");
+    btn.textContent = d ? "Terminar o dia" : "Começar o dia";
+    $("longDay").hidden = true;
+    if (!d){
+      $("day-title").textContent = "Dia";
+      $("dayTotal").innerHTML = "";
+      $("dayInfo").textContent = "Nenhum dia aberto. Começa o dia quando comeres a primeira refeição; as refeições que guardares ficam nesse dia até o terminares.";
+      $("meals").innerHTML = "";
+      return;
+    }
+    const hours = (Date.now() - d.start) / 3600000;
+    $("day-title").textContent = "Dia aberto";
+    $("dayTotal").innerHTML = d.meals.length ? totalsHTML(dayTotals(d)) : "";
+    $("dayInfo").textContent = `Começou ${dateLong(dateStr(d.start))} às ${hhmm(d.start)}.`;
+    if (hours > LONG_DAY_H){ $("longDay").hidden = false; $("longDay").textContent = `Este dia está aberto há ${Math.floor(hours)} h. Se já acabou, toca em “Terminar o dia”.`; }
+    $("meals").innerHTML = d.meals.length ? d.meals.map(m => mealHTML(d, m)).join("") : `<div class="empty">Ainda sem refeições. Depois de analisar um prato, toca em “Guardar refeição”.</div>`;
   }
+
+  function renderCal(){
+    const { y, m } = cal, first = new Date(y, m, 1), nDays = new Date(y, m+1, 0).getDate(), offset = (first.getDay()+6) % 7;
+    const prefix = `${y}-${pad(m+1)}-`, now = dateStr(Date.now());
+    $("calTitle").textContent = first.toLocaleDateString("pt-PT",{month:"long",year:"numeric"}).replace(/^./, c => c.toUpperCase());
+    const byDate = {};
+    for (const d of db.days) if (d.date.startsWith(prefix)){
+      const e = byDate[d.date] ||= { kcal:0, open:false, n:0 };
+      e.kcal += dayTotals(d).kcal; e.n += d.meals.length; e.open ||= d.id === db.open;
+    }
+    let html = ["S","T","Q","Q","S","S","D"].map(h => `<div class="cal-h" aria-hidden="true">${h}</div>`).join("") + "<div></div>".repeat(offset);
+    for (let i = 1; i <= nDays; i++){
+      const ds = prefix + pad(i), e = byDate[ds];
+      html += `<button type="button" class="cal-d${ds===now?" today":""}${ds===selDate?" sel":""}${e?" has":""}" data-act="cal-sel" data-date="${ds}" aria-pressed="${ds===selDate}" aria-label="${esc(dateLong(ds))}${e?`, ${Math.round(e.kcal)} kcal`:""}">
+        <span>${i}</span>${e ? `<small class="num">${Math.round(e.kcal)}</small>` : ""}${e?.open ? '<i class="open-dot" aria-hidden="true"></i>' : ""}</button>`;
+    }
+    $("cal").innerHTML = html;
+
+    // média mensal: só dias terminados com refeições
+    const done = db.days.filter(d => d.date.startsWith(prefix) && d.id !== db.open && d.meals.length);
+    if (done.length){
+      const s = done.map(dayTotals).reduce((a,t) => ({ kcal:a.kcal+t.kcal, proteina:a.proteina+t.proteina, hidratos:a.hidratos+t.hidratos, gordura:a.gordura+t.gordura }), { kcal:0, proteina:0, hidratos:0, gordura:0 });
+      const n = done.length;
+      $("calAvg").innerHTML = `Média do mês: <b class="num">${Math.round(s.kcal/n)}</b> kcal/dia · P ${fmt(s.proteina/n)} · H ${fmt(s.hidratos/n)} · G ${fmt(s.gordura/n)} g (${n} ${n===1?"dia terminado":"dias terminados"})`;
+    } else $("calAvg").textContent = "Sem dias terminados neste mês.";
+
+    const days = db.days.filter(d => d.date === selDate);
+    $("calDetail").innerHTML = !selDate.startsWith(prefix) ? "" : days.length ? days.map(d => {
+      const isOpen = d.id === db.open;
+      const state = isOpen ? "aberto" : `terminado ${dateStr(d.end) !== d.date ? dateShort(dateStr(d.end)) + " " : ""}às ${hhmm(d.end)}`;
+      return `<div class="rule"></div><div class="day-head"><h3>${esc(dateLong(d.date))}</h3><div class="daytotal">${totalsHTML(dayTotals(d))}</div></div>
+        <p class="small">Começou às ${hhmm(d.start)} · ${state}</p>
+        <div class="meals">${d.meals.map(m => mealHTML(d, m)).join("")}</div>
+        ${isOpen ? `<button class="btn btn-ghost btn-sm" type="button" data-act="end" data-day="${esc(d.id)}">Terminar o dia</button>`
+                 : `<button class="btn btn-ghost btn-sm" type="button" data-act="reopen" data-day="${esc(d.id)}">Reabrir dia</button>`}`;
+    }).join("") : `<div class="rule"></div><p class="small">${esc(dateLong(selDate))}: sem registos.</p>`;
+  }
+  const renderDays = () => { renderDay(); renderCal(); };
+
+  document.addEventListener("click", e => {
+    const b = e.target.closest("[data-act]"); if (!b || b.tagName === "INPUT") return;
+    const d = findDay(b.dataset.day), m = d?.meals.find(x => x.id === b.dataset.meal);
+    switch (b.dataset.act){
+      case "start": if (beginDay("Começar o dia agora?")){ selDate = dateStr(Date.now()); renderDays(); } break;
+      case "end": endDay(d); break;
+      case "reopen": reopenDay(d); break;
+      case "del-meal":
+        if (m && confirm(`Apagar a refeição “${m.nome}”?`)){ d.meals.splice(d.meals.indexOf(m), 1); saveDb(); renderDays(); }
+        break;
+      case "del-item": {
+        if (!m) break; const it = m.itens[+b.dataset.i]; if (!it) break;
+        if (m.itens.length === 1){
+          if (!confirm(`“${it.nome}” é o último alimento. Apagar a refeição “${m.nome}”?`)) break;
+          d.meals.splice(d.meals.indexOf(m), 1);
+        } else m.itens.splice(+b.dataset.i, 1);
+        saveDb(); renderDays(); break;
+      }
+      case "cal-sel": selDate = b.dataset.date; renderCal(); break;
+      case "cal-prev": case "cal-next": {
+        const nd = new Date(cal.y, cal.m + (b.dataset.act === "cal-next" ? 1 : -1), 1);
+        cal = { y:nd.getFullYear(), m:nd.getMonth() }; renderCal(); break;
+      }
+    }
+  });
+  document.addEventListener("change", e => {
+    const inp = e.target; if (inp.dataset?.act !== "grams") return;
+    const it = findDay(inp.dataset.day)?.meals.find(x => x.id === inp.dataset.meal)?.itens[+inp.dataset.i];
+    if (!it?.per) return;
+    it.gramas = num(inp.value); for (const k of MACROS) it[k] = it.per[k] * it.gramas;
+    saveDb(); renderDays();
+  });
+  // <details> não propaga "toggle"; apanha-se na fase de captura
+  document.addEventListener("toggle", e => {
+    const id = e.target?.dataset?.mid; if (!id) return;
+    if (e.target.open) openMeals.add(id); else openMeals.delete(id);
+  }, true);
+
+  // ---------- cópia de segurança ----------
+  $("exportBtn").onclick = () => {
+    const blob = new Blob([JSON.stringify({ app:"prato-a-lupa", versao:1, exportado:new Date().toISOString(), dados:db }, null, 1)], { type:"application/json" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `prato-a-lupa-${dateStr(Date.now())}.json`;
+    document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  };
+  $("importBtn").onclick = () => $("importFile").click();
+  $("importFile").addEventListener("change", async e => {
+    const f = e.target.files?.[0]; e.target.value = ""; if (!f) return;
+    let data;
+    try { const j = JSON.parse(await f.text()); data = j?.dados ?? j; if (!Array.isArray(data?.days)) throw 0; }
+    catch { alert("Este ficheiro não é uma cópia de segurança do Prato à Lupa."); return; }
+    const clean = cleanDb(data);
+    if (!confirm(`Importar ${clean.days.length} dias? Os dias guardados neste aparelho (${db.days.length}) são substituídos.`)) return;
+    db = clean; saveDb(); openMeals.clear(); renderDays(); alert("Cópia importada.");
+  });
 
   // ---------- ligações ----------
   $("btnCamOn").onclick = camOn;
@@ -574,7 +812,7 @@ Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
   $("analyze").onclick = analyze;
   $("stop").onclick = () => ctl?.abort();
   $("reset").onclick = resetCapture;
-  document.addEventListener("visibilitychange", () => { if (document.hidden && stream) camOff(); });
+  document.addEventListener("visibilitychange", () => { if (document.hidden){ if (stream) camOff(); } else renderDay(); }); // atualiza o aviso de dia longo
 
   current = { exemplo:true, prato:"Frango grelhado com arroz e brócolos", kcal_min:500, kcal_max:690,
     avisos:["Exemplo ilustrativo. Grava o teu prato para ver a tua análise."],
@@ -585,7 +823,7 @@ Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
       {nome:"Azeite (confeção)",gramas:8,kcal:72,proteina:0,hidratos:0,gordura:8,fibra:0,confianca:"baixa",nota:"Não visível; valor provável para grelhar"}
     ].map(normalize) };
   current.baseKcal = totals(current.itens).kcal;
-  renderResult(); renderDay(); refreshKeyNotice();
+  renderResult(); renderDays(); refreshKeyNotice();
 
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(()=>{});
 })();
