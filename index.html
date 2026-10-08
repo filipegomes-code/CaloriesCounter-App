@@ -261,6 +261,7 @@ dialog form{padding:18px;display:flex;flex-direction:column;gap:14px}
     <div id="acctBox" style="display:flex;flex-direction:column;gap:8px" hidden>
       <div class="eyebrow">Conta e sincronização</div>
       <p class="small" id="acctText"></p>
+      <div id="gisBtn" style="min-height:44px" hidden></div>
       <button class="btn btn-ghost btn-sm" type="button" id="acctBtn"></button>
       <div class="rule"></div>
     </div>
@@ -958,6 +959,9 @@ Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
     appId: "1:222605303356:web:078cb701bcf598410b6d39"
   };
   const FB_URL = "https://www.gstatic.com/firebasejs/13.0.0/";
+  // Login com o botão da Google (Google Identity Services): a Google entrega o token diretamente a esta página,
+  // sem a janela intermédia do firebaseapp.com que o Safari bloqueia. Não é secreto.
+  const GOOGLE_CLIENT_ID = null;
   const sync = { fb:null, user:null, synced:new Map(), metaSynced:"", unsub:[], status:"" };
   const plain = o => JSON.parse(JSON.stringify(o));
 
@@ -1053,8 +1057,35 @@ Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
     if (m !== sync.metaSynced){ sync.metaSynced = m; F.setDoc(userRef(), { open:db.open, table:tableMode(), upd:db.metaUpd || Date.now() }).catch(syncErr); }
   }
 
+  let gisP = null;
+  const loadGIS = () => gisP ||= new Promise((res, rej) => {
+    const sc = document.createElement("script"); sc.src = "https://accounts.google.com/gsi/client"; sc.async = true;
+    sc.onload = () => window.google?.accounts?.id ? res(window.google.accounts.id) : rej(new Error("login da Google indisponível"));
+    sc.onerror = () => { gisP = null; rej(new Error("Não consegui carregar o login da Google. Verifica a internet.")); };
+    document.head.append(sc);
+  });
+  async function showGisButton(){
+    try {
+      const gis = await loadGIS();
+      if (!sync.gisInit){ gis.initialize({ client_id:GOOGLE_CLIENT_ID, callback:onGisCredential, ux_mode:"popup", auto_select:false }); sync.gisInit = true; }
+      gis.renderButton($("gisBtn"), { theme:"outline", size:"large", text:"signin_with", shape:"pill", locale:"pt-PT", width:280 });
+    } catch(e){ setSyncStatus(e.message); }
+  }
+  async function onGisCredential(resp){
+    try {
+      setSyncStatus("A entrar…"); sync.signingIn = true; ls.set("pal-sync-on", "1");
+      const { A, auth } = await fbLoad();
+      await A.signInWithCredential(auth, A.GoogleAuthProvider.credential(resp.credential));
+    } catch(e){
+      sync.signingIn = false; if (!sync.user) ls.set("pal-sync-on", "");
+      setSyncStatus("Não consegui entrar: " + (e?.code || e?.message || e));
+    }
+  }
   function renderAccount(){
     $("acctBox").hidden = !FIREBASE_CONFIG; if (!FIREBASE_CONFIG) return;
+    const gis = GOOGLE_CLIENT_ID && !sync.user;
+    $("gisBtn").hidden = !gis; $("acctBtn").hidden = !!gis;
+    if (gis && !$("gisBtn").childElementCount) showGisButton();
     $("acctText").textContent = sync.status || (sync.user ? `Sincronizado com ${sync.user.email}. Os dias e as refeições ficam iguais em todos os aparelhos onde entrares.` : "Entra com a tua conta Google para veres os mesmos dias no telemóvel e no PC. Sem entrar, os dados ficam só neste aparelho. A chave da IA nunca é sincronizada.");
     $("acctBtn").textContent = sync.user ? "Sair" : "Entrar com Google";
     $("syncLine").hidden = !sync.user && !sync.status;
@@ -1063,7 +1094,7 @@ Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
   $("acctBtn").onclick = async () => {
     try {
       const { A, auth } = await fbLoad();
-      if (sync.user){ if (confirm("Sair da conta? Os dados ficam neste aparelho, mas deixam de sincronizar.")) await A.signOut(auth); return; }
+      if (sync.user){ if (confirm("Sair da conta? Os dados ficam neste aparelho, mas deixam de sincronizar.")){ await A.signOut(auth); window.google?.accounts?.id?.disableAutoSelect(); } return; }
       ls.set("pal-sync-on", "1");
       setSyncStatus("A abrir a janela da Google… escolhe a tua conta.");
       sync.signingIn = true;
