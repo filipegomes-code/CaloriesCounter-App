@@ -1,0 +1,9 @@
+rules_version = '2';
+// Cada utilizador só pode ler e escrever os seus próprios dados (users/{uid} e subcoleções).
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}

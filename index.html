@@ -257,6 +257,12 @@ dialog form{padding:18px;display:flex;flex-direction:column;gap:14px}
 <dialog id="settings">
   <form method="dialog" id="settingsForm">
     <h2>Definições</h2>
+    <div id="acctBox" style="display:flex;flex-direction:column;gap:8px" hidden>
+      <div class="eyebrow">Conta e sincronização</div>
+      <p class="small" id="acctText"></p>
+      <button class="btn btn-ghost btn-sm" type="button" id="acctBtn"></button>
+      <div class="rule"></div>
+    </div>
     <label class="field">Serviço de IA
       <select id="provider">
         <option value="gemini">Google Gemini (grátis)</option>
@@ -345,7 +351,7 @@ dialog form{padding:18px;display:flex;flex-direction:column;gap:14px}
       ls.set("pal-provider", $("provider").value);
       ls.set("pal-gem-key", $("gemKey").value.trim()); ls.set("pal-gem-model", $("gemModel").value);
       ls.set("pal-cld-key", $("cldKey").value.trim()); ls.set("pal-cld-model", $("cldModel").value);
-      ls.set("pal-table", $("tableSel").value);
+      ls.set("pal-table", $("tableSel").value); saveDb();
     }
     refreshKeyNotice();
   });
@@ -733,16 +739,19 @@ Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
     if (i?.fonte?.tab) it.fonte = { tab:String(i.fonte.tab), id:String(i.fonte.id ?? ""), nome:String(i.fonte.nome ?? "") };
     return it;
   }
+  const safeId = v => /^[A-Za-z0-9_-]{1,64}$/.test(String(v ?? "")) ? String(v) : uid();   // também serve de id no Firestore
+  const cleanDay = x => ({
+    id:safeId(x.id), date:x.date, start:num(x.start) || new Date(x.date+"T00:00").getTime(), end: x.end == null ? null : num(x.end), upd:num(x.upd),
+    meals:(Array.isArray(x.meals) ? x.meals : []).map(m => ({ id:String(m?.id||uid()), nome:String(m?.nome||"Refeição"), ts:num(m?.ts)||null, hora:String(m?.hora||""),
+      itens:(Array.isArray(m?.itens) ? m.itens : []).map(cleanItem) }))
+  });
+  const validDay = x => x && /^\d{4}-\d{2}-\d{2}$/.test(x.date);
   function cleanDb(d){
-    const days = (Array.isArray(d?.days) ? d.days : []).filter(x => x && /^\d{4}-\d{2}-\d{2}$/.test(x.date)).map(x => ({
-      id:String(x.id||uid()), date:x.date, start:num(x.start) || new Date(x.date+"T00:00").getTime(), end: x.end == null ? null : num(x.end),
-      meals:(Array.isArray(x.meals) ? x.meals : []).map(m => ({ id:String(m?.id||uid()), nome:String(m?.nome||"Refeição"), ts:num(m?.ts)||null, hora:String(m?.hora||""),
-        itens:(Array.isArray(m?.itens) ? m.itens : []).map(cleanItem) }))
-    })).sort((a,b) => a.start - b.start);
+    const days = (Array.isArray(d?.days) ? d.days : []).filter(validDay).map(cleanDay).sort((a,b) => a.start - b.start);
     // só pode haver um dia aberto
     const open = days.find(x => x.id === d?.open && x.end == null);
     for (const x of days) if (x.end == null && x !== open) x.end = Math.max(x.start, ...x.meals.map(m => m.ts || 0));
-    return { open: open ? open.id : null, days };
+    return { open: open ? open.id : null, metaUpd:num(d?.metaUpd), days };
   }
   // Versão anterior: uma lista de refeições por data em "pal-AAAA-MM-DD", só com totais.
   function migrateLegacy(){
@@ -759,8 +768,19 @@ Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
     return cleanDb({ open:null, days });
   }
   let db = (() => { const raw = ls.get(DB_KEY, null); if (raw){ try { return cleanDb(JSON.parse(raw)); } catch {} } return migrateLegacy(); })();
-  const saveDb = () => ls.set(DB_KEY, JSON.stringify(db));
-  saveDb();
+  // "upd" = última alteração (para decidir quem ganha ao sincronizar); compara-se o conteúdo sem o próprio upd
+  const dayJ = d => JSON.stringify({ ...d, upd:0 });
+  const metaJ = () => JSON.stringify({ open:db.open, table:tableMode() });
+  const lastLocal = new Map(); let lastMeta = "";
+  let stamped = false;
+  function stamp(){   // na 1.ª chamada só memoriza o estado carregado
+    const now = Date.now();
+    for (const d of db.days){ const j = dayJ(d); if (lastLocal.get(d.id) !== j){ if (stamped) d.upd = now; lastLocal.set(d.id, j); } }
+    const m = metaJ(); if (m !== lastMeta){ if (stamped) db.metaUpd = now; lastMeta = m; }
+    stamped = true;
+  }
+  const saveDb = () => { stamp(); push(); ls.set(DB_KEY, JSON.stringify(db)); };
+  stamp(); ls.set(DB_KEY, JSON.stringify(db));
 
   const openDay = () => db.days.find(d => d.id === db.open) || null;
   const dayTotals = d => totals(d.meals.flatMap(m => m.itens));
@@ -922,9 +942,131 @@ Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
     try { const j = JSON.parse(await f.text()); data = j?.dados ?? j; if (!Array.isArray(data?.days)) throw 0; }
     catch { alert("Este ficheiro não é uma cópia de segurança do Prato à Lupa."); return; }
     const clean = cleanDb(data);
-    if (!confirm(`Importar ${clean.days.length} dias? Os dias guardados neste aparelho (${db.days.length}) são substituídos.`)) return;
+    if (!confirm(`Importar ${clean.days.length} dias? Os dias guardados neste aparelho (${db.days.length})${sync.user ? " e na tua conta" : ""} são substituídos.`)) return;
     db = clean; saveDb(); openMeals.clear(); renderDays(); alert("Cópia importada.");
   });
+
+  // ---------- sincronização entre aparelhos (Firebase; opcional, só com login) ----------
+  // A configuração do Firebase não é secreta: o acesso é controlado pelas regras do Firestore (cada utilizador só lê/escreve users/{uid}).
+  const FIREBASE_CONFIG = null;
+  const FB_URL = "https://www.gstatic.com/firebasejs/10.12.2/";
+  const sync = { fb:null, user:null, synced:new Map(), metaSynced:"", unsub:[], status:"" };
+  const plain = o => JSON.parse(JSON.stringify(o));
+
+  async function fbLoad(){
+    if (sync.fb) return sync.fb;
+    const [fbApp, A, F] = await Promise.all(["firebase-app", "firebase-auth", "firebase-firestore"].map(m => import(FB_URL + m + ".js")));
+    const app = fbApp.initializeApp(FIREBASE_CONFIG), auth = A.getAuth(app);
+    const fdb = F.initializeFirestore(app, { localCache: F.persistentLocalCache({ tabManager: F.persistentMultipleTabManager() }), ignoreUndefinedProperties:true });
+    if (location.hostname === "localhost" && ls.get("pal-emu", "")){   // testes com o Firebase Emulator
+      A.connectAuthEmulator(auth, "http://localhost:9099", { disableWarnings:true }); F.connectFirestoreEmulator(fdb, "localhost", 8080);
+      window.palEmuSignIn = (sub, email) => { ls.set("pal-sync-on", "1"); return A.signInWithCredential(auth, A.GoogleAuthProvider.credential(JSON.stringify({ sub, email, email_verified:true }))); };
+    }
+    sync.fb = { A, F, auth, fdb };
+    A.onAuthStateChanged(auth, u => onUser(u).catch(syncErr));
+    return sync.fb;
+  }
+  const userRef = () => sync.fb.F.doc(sync.fb.fdb, "users", sync.user.uid);
+  const dayRef = id => sync.fb.F.doc(sync.fb.fdb, "users", sync.user.uid, "days", id);
+  function syncErr(e){ console.error(e); setSyncStatus("Erro a sincronizar: " + (e?.code || e?.message || e) + ". Os dados continuam guardados neste aparelho."); }
+  function setSyncStatus(t){ sync.status = t; renderAccount(); }
+
+  // Junta os dados da conta com os deste aparelho: por dia, ganha a alteração mais recente.
+  function reconcile(remoteDays, meta){
+    const all = new Map(db.days.map(d => [d.id, d]));
+    for (const r of remoteDays) { const l = all.get(r.id); if (!l || r.upd > l.upd) all.set(r.id, r); }
+    let open = meta && meta.upd > db.metaUpd ? meta.open : db.open;
+    // o mesmo dia criado em dois aparelhos antes de sincronizar: junta as refeições no que começou primeiro
+    const byDate = new Map();
+    for (const d of [...all.values()].sort((a,b) => a.start - b.start)){
+      const k = byDate.get(d.date); if (!k){ byDate.set(d.date, d); continue; }
+      for (const m of d.meals) if (!k.meals.some(x => x.id === m.id)) k.meals.push(m);
+      k.meals.sort((a,b) => (a.ts||0) - (b.ts||0));
+      k.end = k.end == null || d.end == null ? null : Math.max(k.end, d.end);
+      k.upd = Date.now();
+      if (open === d.id) open = k.id;
+      all.delete(d.id);
+    }
+    if (meta?.table && meta.upd > db.metaUpd) ls.set("pal-table", meta.table);
+    db = cleanDb({ open, metaUpd:Math.max(db.metaUpd, meta?.upd || 0), days:[...all.values()] });
+    lastLocal.clear(); for (const d of db.days) lastLocal.set(d.id, dayJ(d)); lastMeta = metaJ();
+  }
+
+  async function onUser(u){
+    sync.unsub.forEach(f => f()); sync.unsub = []; sync.synced = new Map(); sync.metaSynced = "";
+    sync.user = u ? { uid:u.uid, email:u.email || u.displayName || "" } : null;
+    ls.set("pal-sync-on", u ? "1" : "");
+    if (!u){ setSyncStatus(""); return; }
+    setSyncStatus("A sincronizar…");
+    const { F, fdb } = sync.fb;
+    const [snap, metaSnap] = await Promise.all([F.getDocs(F.collection(fdb, "users", u.uid, "days")), F.getDoc(userRef())]);
+    const remote = snap.docs.map(x => x.data()).filter(validDay).map(cleanDay), meta = metaSnap.exists() ? metaSnap.data() : null;
+    for (const r of remote) sync.synced.set(r.id, dayJ(r));
+    if (meta) sync.metaSynced = JSON.stringify({ open:meta.open ?? null, table:meta.table });
+    reconcile(remote, meta);
+    saveDb();   // envia o que a conta ainda não tem
+    renderDays();
+    // alterações vindas de outros aparelhos
+    sync.unsub.push(F.onSnapshot(F.collection(fdb, "users", u.uid, "days"), qs => {
+      let changed = false;
+      for (const c of qs.docChanges()){
+        if (c.doc.metadata.hasPendingWrites) continue;   // eco das nossas escritas
+        const id = c.doc.id, l = findDay(id);
+        if (c.type === "removed"){ sync.synced.delete(id); if (l){ db.days.splice(db.days.indexOf(l), 1); lastLocal.delete(id); changed = true; } continue; }
+        const raw = c.doc.data(); if (!validDay(raw)) continue;
+        const r = cleanDay(raw); sync.synced.set(id, dayJ(r));
+        if (!l || r.upd > l.upd){ if (l) db.days[db.days.indexOf(l)] = r; else db.days.push(r); lastLocal.set(id, dayJ(r)); changed = true; }
+      }
+      if (changed){ db.days.sort((a,b) => a.start - b.start); ls.set(DB_KEY, JSON.stringify(db)); renderDays(); }
+      setSyncStatus("");
+    }, syncErr));
+    sync.unsub.push(F.onSnapshot(userRef(), ds => {
+      if (ds.metadata.hasPendingWrites || !ds.exists()) return;
+      const m = ds.data(); sync.metaSynced = JSON.stringify({ open:m.open ?? null, table:m.table });
+      if (!(m.upd > db.metaUpd)) return;
+      if (m.table) ls.set("pal-table", m.table);
+      db = cleanDb({ ...db, open: m.open ?? null, metaUpd: m.upd });
+      lastMeta = metaJ(); ls.set(DB_KEY, JSON.stringify(db)); renderDays();
+    }, syncErr));
+  }
+
+  // Envia para a conta os dias que mudaram (chamado por saveDb).
+  function push(){
+    if (!sync.user || !sync.fb) return;
+    const { F } = sync.fb, seen = new Set();
+    for (const d of db.days){
+      seen.add(d.id); const j = dayJ(d);
+      if (sync.synced.get(d.id) === j) continue;
+      sync.synced.set(d.id, j); F.setDoc(dayRef(d.id), plain(d)).catch(syncErr);
+    }
+    for (const id of [...sync.synced.keys()]) if (!seen.has(id)){ sync.synced.delete(id); F.deleteDoc(dayRef(id)).catch(syncErr); }
+    const m = JSON.stringify({ open:db.open, table:tableMode() });
+    if (m !== sync.metaSynced){ sync.metaSynced = m; F.setDoc(userRef(), { open:db.open, table:tableMode(), upd:db.metaUpd || Date.now() }).catch(syncErr); }
+  }
+
+  function renderAccount(){
+    $("acctBox").hidden = !FIREBASE_CONFIG; if (!FIREBASE_CONFIG) return;
+    $("acctText").textContent = sync.status || (sync.user ? `Sincronizado com ${sync.user.email}. Os dias e as refeições ficam iguais em todos os aparelhos onde entrares.` : "Entra com a tua conta Google para veres os mesmos dias no telemóvel e no PC. Sem entrar, os dados ficam só neste aparelho. A chave da IA nunca é sincronizada.");
+    $("acctBtn").textContent = sync.user ? "Sair" : "Entrar com Google";
+  }
+  $("acctBtn").onclick = async () => {
+    try {
+      const { A, auth } = await fbLoad();
+      if (sync.user){ if (confirm("Sair da conta? Os dados ficam neste aparelho, mas deixam de sincronizar.")) await A.signOut(auth); return; }
+      ls.set("pal-sync-on", "1");
+      try { await A.signInWithPopup(auth, new A.GoogleAuthProvider()); }
+      catch(e){
+        if (e?.code === "auth/popup-blocked" || e?.code === "auth/operation-not-supported-in-this-environment") return A.signInWithRedirect(auth, new A.GoogleAuthProvider());
+        if (e?.code === "auth/popup-closed-by-user" || e?.code === "auth/cancelled-popup-request"){ if (!sync.user) ls.set("pal-sync-on", ""); return; }
+        throw e;
+      }
+    } catch(e){
+      if (!sync.user) ls.set("pal-sync-on", "");
+      setSyncStatus(e?.code === "auth/unauthorized-domain" ? "Este domínio não está autorizado no Firebase (Authentication → Settings → Authorized domains)." : "Não consegui entrar: " + (e?.code || e?.message || e));
+    }
+  };
+  renderAccount();
+  if (FIREBASE_CONFIG && ls.get("pal-sync-on", "")) fbLoad().catch(syncErr);
 
   // ---------- ligações ----------
   $("btnCamOn").onclick = camOn;
