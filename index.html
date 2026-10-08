@@ -948,8 +948,15 @@ Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
 
   // ---------- sincronização entre aparelhos (Firebase; opcional, só com login) ----------
   // A configuração do Firebase não é secreta: o acesso é controlado pelas regras do Firestore (cada utilizador só lê/escreve users/{uid}).
-  const FIREBASE_CONFIG = null;
-  const FB_URL = "https://www.gstatic.com/firebasejs/10.12.2/";
+  const FIREBASE_CONFIG = {
+    apiKey: "AIzaSyD3HA_gH60M-TQlw1vTQhwhW4aOhbGH2f0",
+    authDomain: "caloriescounter-app.firebaseapp.com",
+    projectId: "caloriescounter-app",
+    storageBucket: "caloriescounter-app.firebasestorage.app",
+    messagingSenderId: "222605303356",
+    appId: "1:222605303356:web:078cb701bcf598410b6d39"
+  };
+  const FB_URL = "https://www.gstatic.com/firebasejs/13.0.0/";
   const sync = { fb:null, user:null, synced:new Map(), metaSynced:"", unsub:[], status:"" };
   const plain = o => JSON.parse(JSON.stringify(o));
 
