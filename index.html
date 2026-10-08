@@ -108,6 +108,19 @@ textarea{resize:vertical;min-height:60px}
 .conf.alta{color:var(--accent)} .conf.media{color:var(--carb)} .conf.baixa{color:var(--fat)}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:1px}
 .warnings{margin:0;padding-left:18px;font-size:13px;color:var(--muted)}
+.src{grid-column:1/-1;font-size:12px;line-height:1.5;color:var(--muted)}
+.src>*{margin-right:6px}
+.src b{font-weight:600;color:var(--ink)}
+.src.ia b{color:var(--carb)}
+.linkbtn{appearance:none;background:none;border:0;padding:2px 0;color:var(--accent);font:600 12px var(--f-body);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+#picker form{gap:10px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+.tabs button{appearance:none;border:1px solid var(--line);background:var(--sunk);color:var(--ink);border-radius:999px;padding:6px 12px;font:600 13px var(--f-body);cursor:pointer}
+.tabs button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.results{display:flex;flex-direction:column;max-height:50vh;overflow:auto;border:1px solid var(--line);border-radius:10px}
+.results button{appearance:none;background:none;border:0;border-top:1px solid var(--line);color:var(--ink);text-align:left;padding:10px 12px;font:14px/1.3 var(--f-body);cursor:pointer;display:flex;justify-content:space-between;gap:10px}
+.results button:first-child{border-top:0}
+.results button span{color:var(--muted);font:500 12px var(--f-num);white-space:nowrap}
 
 /* Dia */
 .day-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
@@ -227,7 +240,19 @@ dialog form{padding:18px;display:flex;flex-direction:column;gap:14px}
   </section>
 
   <p class="small">Estimativas. Erro típico de 10–25% em pratos simples, mais em pratos misturados ou com molhos. Se pesares algum alimento, corrige as gramas.</p>
+  <p class="small">Valores nutricionais — Fonte: Base de Dados da Composição de Alimentos. Instituto Nacional de Saúde Doutor Ricardo Jorge, I. P. - INSA. v 7.1 - 2026 · USDA FoodData Central, SR Legacy.</p>
 </div>
+
+<dialog id="picker">
+  <form method="dialog">
+    <h2 id="pickTitle">Escolher alimento</h2>
+    <div class="tabs" id="pickTabs"></div>
+    <input id="pickQ" type="text" autocomplete="off" spellcheck="false" placeholder="Procurar na tabela…" aria-label="Procurar alimento">
+    <div class="results" id="pickRes"></div>
+    <button class="btn btn-ghost btn-sm" type="button" id="pickIA">Usar a estimativa da IA</button>
+    <button class="btn btn-ghost" value="cancel" type="submit" formnovalidate>Cancelar</button>
+  </form>
+</dialog>
 
 <dialog id="settings">
   <form method="dialog" id="settingsForm">
@@ -265,6 +290,16 @@ dialog form{padding:18px;display:flex;flex-direction:column;gap:14px}
     </div>
     <p class="small">As chaves ficam guardadas só neste telemóvel e só são enviadas para o serviço escolhido.</p>
     <div class="rule"></div>
+    <label class="field">Tabela nutricional
+      <select id="tableSel">
+        <option value="ambas">INSA, e USDA quando faltar (recomendado)</option>
+        <option value="insa">Só INSA (Portugal, 1376 alimentos)</option>
+        <option value="usda">Só USDA (EUA, 7448 alimentos, em inglês)</option>
+        <option value="ia">Nenhuma: valores estimados pela IA</option>
+      </select>
+    </label>
+    <p class="small">A IA identifica os alimentos e as gramas; as calorias e os macros por 100 g vêm da tabela. Podes trocar o alimento escolhido em cada componente.</p>
+    <div class="rule"></div>
     <div class="eyebrow">Cópia de segurança</div>
     <div class="btnrow">
       <button class="btn btn-ghost btn-sm" id="exportBtn" type="button">Exportar</button>
@@ -293,12 +328,14 @@ dialog form{padding:18px;display:flex;flex-direction:column;gap:14px}
       ? { provider, key: ls.get("pal-cld-key",""), model: ls.get("pal-cld-model","claude-sonnet-5-5") }
       : { provider, key: ls.get("pal-gem-key",""), model: ls.get("pal-gem-model","gemini-3.8-flash") };
   };
+  const tableMode = () => { const t = ls.get("pal-table","ambas"); return ["ambas","insa","usda","ia"].includes(t) ? t : "ambas"; };
   function refreshKeyNotice(){ $("needKey").hidden = !!cfg().key; }
   function showProviderFields(){ const g = $("provider").value === "gemini"; $("gemFields").hidden = !g; $("cldFields").hidden = g; }
   function openSettings(){
     $("provider").value = ls.get("pal-provider","gemini");
     $("gemKey").value = ls.get("pal-gem-key",""); $("gemModel").value = ls.get("pal-gem-model","gemini-3.8-flash");
     $("cldKey").value = ls.get("pal-cld-key",""); $("cldModel").value = ls.get("pal-cld-model","claude-sonnet-5-5");
+    $("tableSel").value = tableMode();
     showProviderFields(); $("settings").showModal();
   }
   $("provider").onchange = showProviderFields;
@@ -308,6 +345,7 @@ dialog form{padding:18px;display:flex;flex-direction:column;gap:14px}
       ls.set("pal-provider", $("provider").value);
       ls.set("pal-gem-key", $("gemKey").value.trim()); ls.set("pal-gem-model", $("gemModel").value);
       ls.set("pal-cld-key", $("cldKey").value.trim()); ls.set("pal-cld-model", $("cldModel").value);
+      ls.set("pal-table", $("tableSel").value);
     }
     refreshKeyNotice();
   });
@@ -441,17 +479,45 @@ dialog form{padding:18px;display:flex;flex-direction:column;gap:14px}
 
   // ---------- análise ----------
   const blobToB64 = b => new Promise((res,rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(b); });
-  function prompt(n, notes){
+  // ---------- tabelas nutricionais (valores por 100 g) ----------
+  const TABLES = { insa:{ url:"data/insa.json", nome:"INSA" }, usda:{ url:"data/usda.json", nome:"USDA" } };
+  const STOP = new Set(["with","and","or","the","of","in","de","do","da","dos","das","com","e","o","a","os","as","em","no","na","ao"]);
+  const toks = s => noAccent(s).split(/[^a-z0-9]+/).filter(t => t.length > 1 && !STOP.has(t));
+  function loadTable(k){
+    const T = TABLES[k];
+    T.p ||= fetch(T.url).then(r => { if (!r.ok) throw 0; return r.json(); }).then(j => {
+      T.rows = j.alimentos.map(a => ({ id:String(a[0]), nome:a[1], v:{ kcal:a[2], proteina:a[3], hidratos:a[4], gordura:a[5], fibra:a[6] }, t:toks(a[1]) }));
+      T.byId = new Map(T.rows.map(r => [r.id, r]));
+      return T;
+    }).catch(() => { T.p = null; throw new Error(`Não consegui carregar a tabela ${T.nome}. Verifica a internet.`); });
+    return T.p;
+  }
+  // Procura simples por palavras (sem acentos); cov = fração das palavras da pesquisa encontradas.
+  function search(T, q, n = 40){
+    const qt = toks(q); if (!qt.length) return [];
+    const out = [], exact = qt.join(" ");
+    for (const r of T.rows){
+      let m = 0;
+      for (const w of qt) if (r.t.some(x => x === w || (Math.min(x.length, w.length) >= 3 && (x.startsWith(w) || w.startsWith(x))))) m++;
+      if (m) out.push({ r, cov:m/qt.length, s:m/qt.length - 0.03*Math.max(0, r.t.length - m) + (r.t[0] === qt[0] ? 0.15 : 0) + (r.t.join(" ") === exact ? 0.5 : 0) });
+    }
+    return out.sort((a,b) => b.s - a.s).slice(0, n);
+  }
+  const insaList = T => T.list ||= `Tabela INSA de composição de alimentos (código|nome), para escolheres o código de cada componente:\n` + T.rows.map(r => `${r.id}|${r.nome}`).join("\n");
+
+  function prompt(n, notes, mode){
+    const useInsa = mode === "insa" || mode === "ambas", useUsda = mode === "usda" || mode === "ambas";
+    const ex = `{"nome":"Arroz branco cozido",${useInsa ? `"insa":"403",` : ""}${useUsda ? `"usda":"Rice, white, long-grain, regular, enriched, cooked",` : ""}"gramas":180,"kcal":234,"proteina":4.3,"hidratos":51.5,"gordura":0.5,"fibra":0.7,"confianca":"alta|media|baixa","nota":"curta, opcional"}`;
     return `És nutricionista e especialista em estimar porções a partir de imagens.
-As ${n} imagens acima são fotogramas do MESMO prato, tirados enquanto a câmara rodava à volta dele, por ordem temporal.
+As ${n} imagens ${useInsa ? "a seguir à tabela " : ""}são fotogramas do MESMO prato, tirados enquanto a câmara rodava à volta dele, por ordem temporal.
 Usa as várias perspetivas para estimar o VOLUME de cada componente (altura e profundidade, não só a área vista de cima) e a escala (diâmetro do prato, talheres, mão, copo). Converte volume em peso com densidades típicas do alimento tal como servido.
 ${notes ? `Notas do utilizador (prevalecem sobre o que vês): ${notes}\n` : ""}
-Para cada componente: nome, peso em gramas como servido (cozinhado), e energia e macronutrientes para ESSE peso, usando tabelas de composição (Tabela da Composição de Alimentos do INSA, USDA).
-Se for plausível haver gordura de confeção ou molho não visível (azeite, óleo, manteiga, natas), acrescenta um componente separado com a quantidade provável e confiança "baixa".
+Para cada componente: nome em português, peso em gramas como servido (cozinhado)${useInsa ? `, "insa" = código da linha da tabela INSA acima que melhor corresponde ao alimento TAL COMO SERVIDO (cozido, frito, grelhado, cru…)` : ""}${useUsda ? `, "usda" = descrição em inglês no estilo da USDA SR Legacy, também no estado em que é servido` : ""}, e a tua estimativa de energia e macronutrientes para ESSE peso.
+${useInsa ? `Em "insa" usa só códigos que existam na tabela; se nenhuma linha servir, usa null. Se o prato for um prato composto da tabela (ex.: "Arroz de pato") e os componentes não se separarem, podes usar um único componente com esse código.\n` : ""}Se for plausível haver gordura de confeção ou molho não visível (azeite, óleo, manteiga, natas), acrescenta um componente separado com a quantidade provável e confiança "baixa".
 Dá um intervalo realista para as kcal totais, refletindo a incerteza.
 
 Responde APENAS com JSON, sem texto à volta, neste formato:
-{"prato":"nome curto do prato","itens":[{"nome":"Arroz branco cozido","gramas":180,"kcal":234,"proteina":4.3,"hidratos":51.5,"gordura":0.5,"fibra":0.7,"confianca":"alta|media|baixa","nota":"curta, opcional"}],"kcal_min":0,"kcal_max":0,"avisos":["no máximo 3 avisos curtos"]}
+{"prato":"nome curto do prato","itens":[${ex}],"kcal_min":0,"kcal_max":0,"avisos":["no máximo 3 avisos curtos"]}
 Gramas e macros com 1 casa decimal, kcal inteiras. Texto em português de Portugal.
 Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
   }
@@ -464,12 +530,12 @@ Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
   const GEMINI_MODELS = ["gemini-3.8-flash","gemini-3.7-flash","gemini-3.5-flash-lite"];
   const sleep = (ms, signal) => new Promise((res, rej) => { const t = setTimeout(res, ms); signal?.addEventListener("abort", () => { clearTimeout(t); rej(new DOMException("Aborted","AbortError")); }, { once:true }); });
   // Tenta o modelo escolhido; se estiver ocupado (503/500), repete e depois passa aos outros modelos.
-  async function callGemini(key, model, imgs, promptText, signal){
+  async function callGemini(key, model, imgs, promptText, signal, pre){
     const order = [model, ...GEMINI_MODELS.filter(m => m !== model)];
     let lastErr;
     for (const m of order){
       for (let attempt = 0; attempt < 2; attempt++){
-        try { return await callGeminiOnce(key, m, imgs, promptText, signal); }
+        try { return await callGeminiOnce(key, m, imgs, promptText, signal, pre); }
         catch(e){
           if (!e.busy) throw e;
           lastErr = e;
@@ -480,8 +546,8 @@ Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
     }
     throw new Error("Todos os modelos Gemini gratuitos estão sobrecarregados neste momento. Tenta daqui a uns minutos.");
   }
-  async function callGeminiOnce(key, model, imgs, promptText, signal){
-    const parts = imgs.map(data => ({ inline_data:{ mime_type:"image/jpeg", data } }));
+  async function callGeminiOnce(key, model, imgs, promptText, signal, pre){
+    const parts = [...(pre ? [{ text: pre }] : []), ...imgs.map(data => ({ inline_data:{ mime_type:"image/jpeg", data } }))];
     parts.push({ text: promptText });
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method:"POST", signal,
@@ -501,8 +567,9 @@ Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
     if (!cand) throw new Error("O Gemini recusou o pedido" + (body?.promptFeedback?.blockReason ? " (" + body.promptFeedback.blockReason + ")" : "") + ". Tenta com outro vídeo.");
     return (cand.content?.parts || []).filter(p => p.text && !p.thought).map(p => p.text).join("\n");
   }
-  async function callClaude(key, model, imgs, promptText, signal){
-    const content = imgs.map(data => ({ type:"image", source:{ type:"base64", media_type:"image/jpeg", data } }));
+  async function callClaude(key, model, imgs, promptText, signal, pre){
+    // a tabela vai primeiro e com cache: nos pedidos seguintes custa ~10%
+    const content = [...(pre ? [{ type:"text", text:pre, cache_control:{ type:"ephemeral" } }] : []), ...imgs.map(data => ({ type:"image", source:{ type:"base64", media_type:"image/jpeg", data } }))];
     content.push({ type:"text", text: promptText });
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method:"POST", signal,
@@ -526,21 +593,30 @@ Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
     if (!frames.length) return;
     setError(""); ctl = new AbortController();
     $("analyze").disabled = true; $("reset").hidden = true; $("stop").hidden = false;
-    setStatus("A analisar o prato… pode demorar até 1 minuto.");
     try {
+      const mode = tableMode();
+      setStatus("A carregar a tabela nutricional…");
+      const [insa, usda] = await Promise.all([mode === "insa" || mode === "ambas" ? loadTable("insa") : null, mode === "usda" || mode === "ambas" ? loadTable("usda") : null]);
+      setStatus("A analisar o prato… pode demorar até 1 minuto.");
       const imgs = await Promise.all(frames.map(blobToB64));
-      const promptText = prompt(frames.length, $("notes").value.trim().slice(0,600));
+      const promptText = prompt(frames.length, $("notes").value.trim().slice(0,600), mode), pre = insa ? insaList(insa) : "";
       const text = cfg().provider === "claude"
-        ? await callClaude(key, model, imgs, promptText, ctl.signal)
-        : await callGemini(key, model, imgs, promptText, ctl.signal);
+        ? await callClaude(key, model, imgs, promptText, ctl.signal, pre)
+        : await callGemini(key, model, imgs, promptText, ctl.signal, pre);
       const data = parseJSON(text);
       if (!data) throw new Error("A resposta veio num formato inesperado. Toca em Analisar para tentar de novo.");
       if (data.erro) throw new Error("Não identifiquei comida: " + data.erro);
       if (!Array.isArray(data.itens) || !data.itens.length) throw new Error("A resposta não trouxe alimentos. Tenta outra vez.");
       const itens = data.itens.map(normalize);
+      const baseKcal = totals(itens).kcal;   // o intervalo da IA refere-se aos valores dela; escala-se com o total final
+      if (mode !== "ia") itens.forEach((it, k) => {
+        const raw = data.itens[k]; it.q = { insa:it.nome, usda:raw.usda ? String(raw.usda) : it.nome };
+        let row = insa && raw.insa != null ? insa.byId.get(String(raw.insa).trim()) : null, tab = "insa";
+        if (!row && usda && raw.usda){ const best = search(usda, String(raw.usda), 1)[0]; if (best && best.cov >= .6){ row = best.r; tab = "usda"; } }
+        if (row) applySource(it, tab, row); else it.fonte = { tab:"ia" };
+      });
       current = { prato:String(data.prato||"Prato"), itens, kcal_min:num(data.kcal_min), kcal_max:num(data.kcal_max),
-        avisos: Array.isArray(data.avisos) ? data.avisos.slice(0,3).map(String) : [], exemplo:false };
-      current.baseKcal = totals(itens).kcal;
+        avisos: Array.isArray(data.avisos) ? data.avisos.slice(0,3).map(String) : [], exemplo:false, baseKcal };
       renderResult();
       $("result").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block:"start" });
     } catch(e){
@@ -557,8 +633,19 @@ Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
       hidratos:num(item.hidratos), gordura:num(item.gordura), fibra:num(item.fibra),
       confianca: ["alta","media","baixa"].includes(conf) ? conf : "media", nota: item.nota ? String(item.nota) : "" };
     it.per = { kcal:it.kcal/g, proteina:it.proteina/g, hidratos:it.hidratos/g, gordura:it.gordura/g, fibra:it.fibra/g };
+    it.ia = { ...it.per };   // estimativa da IA, para poder voltar a ela
     return it;
   }
+  const recalc = it => { for (const k of MACROS) it[k] = it.per[k] * it.gramas; };
+  function applySource(it, tab, row){
+    it.fonte = { tab, id:row.id, nome:row.nome };
+    it.per = Object.fromEntries(MACROS.map(k => [k, row.v[k] / 100]));
+    recalc(it);
+  }
+  function useAI(it){ it.fonte = { tab:"ia" }; it.per = { ...it.ia }; recalc(it); }
+  const srcHTML = (i, idx) => !i.fonte ? "" : i.fonte.tab === "ia"
+    ? `<div class="src ia"><b>Estimativa da IA</b><span>(não está a usar a tabela)</span><button class="linkbtn" type="button" data-pick="${idx}">Escolher na tabela</button></div>`
+    : `<div class="src"><span>${TABLES[i.fonte.tab].nome}:</span><b>${esc(i.fonte.nome)}</b><span class="num">${Math.round(i.per.kcal*100)} kcal/100 g</span><button class="linkbtn" type="button" data-pick="${idx}">Mudar</button></div>`;
   const totals = itens => itens.reduce((t,i)=>({kcal:t.kcal+i.kcal,proteina:t.proteina+i.proteina,hidratos:t.hidratos+i.hidratos,gordura:t.gordura+i.gordura,fibra:t.fibra+i.fibra,gramas:t.gramas+i.gramas}),{kcal:0,proteina:0,hidratos:0,gordura:0,fibra:0,gramas:0});
 
   function renderResult(){
@@ -580,18 +667,54 @@ Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
           <span class="grams"><input id="g${idx}" data-idx="${idx}" type="number" inputmode="decimal" min="0" step="1" value="${Math.round(i.gramas)}" aria-label="Gramas de ${esc(i.nome)}">g</span>
           <button class="icon-btn" data-del="${idx}" type="button" aria-label="Remover ${esc(i.nome)}">×</button>
           <div class="imeta"><span class="num">${Math.round(i.kcal)} kcal</span><span class="num">P ${fmt(i.proteina)} · H ${fmt(i.hidratos)} · G ${fmt(i.gordura)}</span><span class="conf ${i.confianca}">${i.confianca==="media"?"média":i.confianca}</span></div>
+          ${current.exemplo ? "" : srcHTML(i, idx)}
           ${i.nota?`<div class="note">${esc(i.nota)}</div>`:""}</div>`).join("")}
       </div></div>
       ${current.avisos?.length?`<ul class="warnings">${current.avisos.map(a=>`<li>${esc(a)}</li>`).join("")}</ul>`:""}
       ${current.exemplo?"":`<button class="btn btn-primary" id="save" type="button">Guardar refeição</button>`}`;
     el.querySelectorAll("input[data-idx]").forEach(inp => inp.addEventListener("change", () => {
-      const it = current.itens[+inp.dataset.idx], g = num(inp.value); it.gramas = g;
-      for (const k of ["kcal","proteina","hidratos","gordura","fibra"]) it[k] = it.per[k]*g;
+      const it = current.itens[+inp.dataset.idx]; it.gramas = num(inp.value); recalc(it);
       renderResult();
     }));
     el.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => { current.itens.splice(+b.dataset.del,1); renderResult(); }));
+    el.querySelectorAll("[data-pick]").forEach(b => b.addEventListener("click", () => openPicker(+b.dataset.pick)));
     const s = $("save"); if (s) s.addEventListener("click", () => { if (saveMeal()){ s.disabled = true; s.textContent = "Guardado"; } });
   }
+
+  // ---------- escolher o alimento na tabela ----------
+  let pick = { idx:-1, tab:"insa" };
+  function openPicker(idx){
+    const it = current?.itens[idx]; if (!it) return;
+    pick = { idx, tab: it.fonte?.tab === "usda" || tableMode() === "usda" ? "usda" : "insa" };
+    $("pickTitle").textContent = it.nome;
+    $("pickQ").value = it.q?.[pick.tab] ?? it.nome;
+    $("pickIA").hidden = it.fonte?.tab === "ia";
+    $("picker").showModal(); renderPick();
+  }
+  async function renderPick(){
+    $("pickTabs").innerHTML = Object.entries(TABLES).map(([k,T]) => `<button type="button" data-tab="${k}" aria-pressed="${k === pick.tab}">${T.nome}</button>`).join("");
+    const box = $("pickRes"), tab = pick.tab, q = $("pickQ").value;
+    let T;
+    try { T = await loadTable(tab); } catch(e){ box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+    if (tab !== pick.tab || q !== $("pickQ").value) return;   // entretanto mudou
+    const res = search(T, q);
+    box.innerHTML = res.length ? res.map(({r}) => `<button type="button" data-id="${esc(r.id)}">${esc(r.nome)}<span>${r.v.kcal} kcal</span></button>`).join("")
+      : `<div class="empty">${q.trim() ? "Nada encontrado. Experimenta outras palavras" + (tab === "usda" ? " (em inglês)" : "") + "." : "Escreve para procurar."}</div>`;
+  }
+  $("pickQ").addEventListener("input", renderPick);
+  $("pickQ").addEventListener("keydown", e => { if (e.key === "Enter") e.preventDefault(); });   // não fechar o diálogo
+  $("pickTabs").addEventListener("click", e => {
+    const b = e.target.closest("[data-tab]"); if (!b || b.dataset.tab === pick.tab) return;
+    const it = current.itens[pick.idx];
+    if (it.q) it.q[pick.tab] = $("pickQ").value;
+    pick.tab = b.dataset.tab; $("pickQ").value = it.q?.[pick.tab] ?? it.nome; renderPick();
+  });
+  $("pickRes").addEventListener("click", e => {
+    const b = e.target.closest("[data-id]"), it = current?.itens[pick.idx]; if (!b || !it) return;
+    const row = TABLES[pick.tab].byId?.get(b.dataset.id); if (!row) return;
+    applySource(it, pick.tab, row); $("picker").close(); renderResult();
+  });
+  $("pickIA").onclick = () => { const it = current?.itens[pick.idx]; if (it){ useAI(it); $("picker").close(); renderResult(); } };
 
   // ---------- dias (começar/terminar à mão; o dia fica na data em que começou) ----------
   const DB_KEY = "pal-days-v1", LONG_DAY_H = 20, MACROS = ["kcal","proteina","hidratos","gordura","fibra"];
@@ -607,6 +730,7 @@ Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
     const it = { nome:String(i?.nome||"Alimento"), gramas:num(i?.gramas) };
     for (const k of MACROS) it[k] = num(i?.[k]);
     it.per = i?.per && typeof i.per === "object" ? Object.fromEntries(MACROS.map(k => [k, num(i.per[k])])) : null;
+    if (i?.fonte?.tab) it.fonte = { tab:String(i.fonte.tab), id:String(i.fonte.id ?? ""), nome:String(i.fonte.nome ?? "") };
     return it;
   }
   function cleanDb(d){
