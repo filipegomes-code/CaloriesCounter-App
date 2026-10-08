@@ -169,6 +169,7 @@ dialog form{padding:18px;display:flex;flex-direction:column;gap:14px}
     <div>
       <div class="eyebrow">Calorias e macros por vídeo</div>
       <h1>Prato à Lupa</h1>
+      <div class="small" id="syncLine" hidden></div>
     </div>
     <button class="icon-btn" id="openSettings" type="button" aria-label="Definições">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -1055,16 +1056,22 @@ Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
     $("acctBox").hidden = !FIREBASE_CONFIG; if (!FIREBASE_CONFIG) return;
     $("acctText").textContent = sync.status || (sync.user ? `Sincronizado com ${sync.user.email}. Os dias e as refeições ficam iguais em todos os aparelhos onde entrares.` : "Entra com a tua conta Google para veres os mesmos dias no telemóvel e no PC. Sem entrar, os dados ficam só neste aparelho. A chave da IA nunca é sincronizada.");
     $("acctBtn").textContent = sync.user ? "Sair" : "Entrar com Google";
+    $("syncLine").hidden = !sync.user && !sync.status;
+    $("syncLine").textContent = sync.user ? `Sincronizado · ${sync.user.email}` : sync.status;
   }
   $("acctBtn").onclick = async () => {
     try {
       const { A, auth } = await fbLoad();
       if (sync.user){ if (confirm("Sair da conta? Os dados ficam neste aparelho, mas deixam de sincronizar.")) await A.signOut(auth); return; }
       ls.set("pal-sync-on", "1");
+      setSyncStatus("A abrir a janela da Google… escolhe a tua conta.");
       try { await A.signInWithPopup(auth, new A.GoogleAuthProvider()); }
       catch(e){
         if (e?.code === "auth/popup-blocked" || e?.code === "auth/operation-not-supported-in-this-environment") return A.signInWithRedirect(auth, new A.GoogleAuthProvider());
-        if (e?.code === "auth/popup-closed-by-user" || e?.code === "auth/cancelled-popup-request"){ if (!sync.user) ls.set("pal-sync-on", ""); return; }
+        if (e?.code === "auth/popup-closed-by-user" || e?.code === "auth/cancelled-popup-request"){
+          if (!sync.user){ ls.set("pal-sync-on", ""); setSyncStatus("A janela da Google fechou antes de o login terminar (" + e.code + "). Tenta outra vez."); }
+          return;
+        }
         throw e;
       }
     } catch(e){
