@@ -21,7 +21,7 @@ PWA para telemóvel que estima calorias e macros (proteína, hidratos, gordura, 
 
 ## Ficheiros
 - `index.html` — tudo inline (HTML, CSS, JS num IIFE), ~1170 linhas, sem build. Secções marcadas com `// ---------- nome ----------`: definições, util, nitidez e captura, câmara ao vivo, ficheiros, análise, tabelas nutricionais, resultado, escolher o alimento na tabela, dias, cópia de segurança, sincronização, ligações.
-- `sw.js` — service worker, rede primeiro, cache como fallback. **Sempre que mudares ficheiros, aumenta `CACHE` (`prato-a-lupa-vN`)** — atualmente v14.
+- `sw.js` — service worker, rede primeiro, cache como fallback. **Sempre que mudares ficheiros, aumenta `CACHE` (`prato-a-lupa-vN`)** — atualmente v15.
 - `manifest.webmanifest`, `icon.svg`, `icon-180/192/512.png`.
 - `data/insa.json` (1376 alimentos, ~83 KB) e `data/usda.json` (7448, ~670 KB): `{fonte, versao, alimentos:[[id, nome, kcal, proteina, hidratos, gordura, fibra], ...]}`, valores por 100 g. Hidratos = disponíveis (sem fibra); no USDA a fibra foi subtraída ao "carbohydrate by difference".
 - `tools/build_tables.py` — gera os dois JSON (INSA a partir do Excel do PortFIR, precisa de openpyxl; USDA a partir do CSV SR Legacy 2018-04). Instruções no topo do ficheiro.
@@ -31,12 +31,14 @@ PWA para telemóvel que estima calorias e macros (proteína, hidratos, gordura, 
 
 ## Fluxo de análise
 1. Entrada: câmara ao vivo (`getUserMedia`, só HTTPS/localhost), vídeo/fotos da galeria, ou gravar com a app da câmara. Fotogramas escolhidos por nitidez (variância do Laplaciano), lado maior 1024 px, JPEG.
+   - **Ou texto**: caixa "Ou escreve o que comeste…" (cresce com o texto; Enter envia, Shift+Enter nova linha) com microfone ao lado. `analyze(true)` manda só texto à IA (sem imagens), com um prompt que converte porções típicas portuguesas em gramas; o resto (tabelas, resultado, guardar) é igual.
+   - Ditado: Web Speech API do browser (`SpeechRecognition`/`webkitSpeechRecognition`, `pt-PT`, resultados parciais em direto, `continuous=false` — tocar outra vez acrescenta). Chrome Android e Safari; no Firefox o botão esconde-se. O áudio é transcrito pelos servidores da Google/Apple.
 2. IA escolhida nas definições: **Gemini** (por omissão, nível grátis) ou **Claude** (pago). Chaves coladas pelo utilizador, guardadas só em localStorage, enviadas diretamente do browser (Claude usa `anthropic-dangerous-direct-browser-access`).
    - Gemini: `gemini-3.8-flash` (omissão), `gemini-3.7-flash`, `gemini-3.5-flash-lite`. Em 503/500/404 repete uma vez e passa ao seguinte.
    - Claude: `claude-sonnet-5-5`, `claude-haiku-4-5-20251001`.
 3. **Tabela nutricional** (definição `pal-table`: `ambas` por omissão / `insa` / `usda` / `ia`):
    - INSA: a lista `código|nome` (~45k caracteres, ~15k tokens) vai **no pedido, antes das imagens**; a IA devolve `"insa":"<código>"`. No Claude esse bloco leva `cache_control`. A app confirma que o código existe.
-   - USDA: não cabe no pedido; a IA devolve `"usda":"<descrição inglesa estilo SR Legacy>"` e a app faz procura por palavras (`search()`, aceita se cobrir ≥60% das palavras; bónus por match exato).
+   - USDA: não cabe no pedido; a IA devolve `"usda":"<descrição inglesa estilo SR Legacy>"` e a app faz procura por palavras (`search()`: palavra igual vale 1, só prefixo igual vale 0,7; aceita se cobrir ≥60%; bónus por match exato).
    - Ordem: INSA → USDA → estimativa da IA (marcada "Estimativa da IA").
    - A app multiplica gramas × valores/100 g. A IA continua a devolver as suas estimativas (guardadas em `it.ia`) para poder voltar a elas.
    - Cada componente mostra a fonte (ex. "INSA: Arroz cozido simples · 125 kcal/100 g") com "Mudar" → diálogo de procura (separadores INSA/USDA, "Usar a estimativa da IA").

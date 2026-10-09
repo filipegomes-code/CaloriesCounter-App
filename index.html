@@ -89,6 +89,19 @@ textarea{resize:vertical;min-height:60px}
 .notice.err{background:var(--err-bg);color:var(--err-ink)}
 .small{font-size:12.5px;color:var(--muted);margin:0}
 
+/* Escrever ou ditar */
+.ask{display:flex;align-items:flex-end;gap:4px;background:var(--bg);border:1px solid var(--line);border-radius:22px;padding:4px 4px 4px 14px}
+.ask:focus-within{outline:3px solid var(--accent);outline-offset:1px}
+.ask textarea{flex:1;border:0;background:none;resize:none;min-height:0;height:auto;padding:8px 0;max-height:160px;outline:none;font:15px/1.4 var(--f-body);color:var(--ink)}
+.ask textarea:focus-visible{outline:none}
+.ask-btn{appearance:none;flex:none;width:38px;height:38px;border-radius:50%;border:0;background:none;color:var(--muted);display:grid;place-items:center;cursor:pointer;touch-action:manipulation}
+.ask-btn svg{width:20px;height:20px}
+.ask-btn.send{background:var(--accent);color:var(--accent-ink)}
+.ask-btn.on{background:var(--fat);color:#fff;animation:pulse 1.2s ease-in-out infinite}
+.ask-btn[disabled]{opacity:.5}
+@keyframes pulse{50%{box-shadow:0 0 0 6px color-mix(in srgb,var(--fat) 25%,transparent)}}
+@media (prefers-reduced-motion: reduce){.ask-btn.on{animation:none}}
+
 /* Rótulo */
 .label{background:var(--surface);border:2px solid var(--ink);border-radius:6px;padding:16px;display:flex;flex-direction:column;gap:14px}
 .label-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
@@ -204,6 +217,15 @@ dialog form{padding:18px;display:flex;flex-direction:column;gap:14px}
       </button>
       <button class="btn btn-ghost" id="btnRecFile" type="button">Gravar com a app da câmara</button>
       <button class="btn btn-ghost" id="btnPick" type="button">Da galeria</button>
+      <div class="ask btn-wide">
+        <textarea id="ask" rows="1" placeholder="Ou escreve o que comeste…" aria-label="Descreve o que comeste"></textarea>
+        <button class="ask-btn" id="micBtn" type="button" aria-label="Ditar" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v4"/></svg>
+        </button>
+        <button class="ask-btn send" id="askSend" type="button" aria-label="Analisar o que escreveste" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>
+        </button>
+      </div>
     </div>
     <div class="btnrow" id="liveRow" hidden>
       <button class="btn btn-primary" id="btnRec" type="button">Gravar 8 s</button>
@@ -528,28 +550,35 @@ dialog form{padding:18px;display:flex;flex-direction:column;gap:14px}
     const out = [], exact = qt.join(" ");
     for (const r of T.rows){
       let m = 0;
-      for (const w of qt) if (r.t.some(x => x === w || (Math.min(x.length, w.length) >= 3 && (x.startsWith(w) || w.startsWith(x))))) m++;
+      // palavra igual vale 1; só o início igual (ex. "cozid" ~ "cozido") vale 0,7
+      for (const w of qt) m += r.t.includes(w) ? 1 : r.t.some(x => Math.min(x.length, w.length) >= 3 && (x.startsWith(w) || w.startsWith(x))) ? 0.7 : 0;
       if (m) out.push({ r, cov:m/qt.length, s:m/qt.length - 0.03*Math.max(0, r.t.length - m) + (r.t[0] === qt[0] ? 0.15 : 0) + (r.t.join(" ") === exact ? 0.5 : 0) });
     }
     return out.sort((a,b) => b.s - a.s).slice(0, n);
   }
   const insaList = T => T.list ||= `Tabela INSA de composição de alimentos (código|nome), para escolheres o código de cada componente:\n` + T.rows.map(r => `${r.id}|${r.nome}`).join("\n");
 
-  function prompt(n, notes, mode){
+  // n = nº de imagens; se "said" vier preenchido, é uma descrição escrita/ditada sem imagens
+  function prompt(n, notes, mode, said){
     const useInsa = mode === "insa" || mode === "ambas", useUsda = mode === "usda" || mode === "ambas";
     const ex = `{"nome":"Arroz branco cozido",${useInsa ? `"insa":"403",` : ""}${useUsda ? `"usda":"Rice, white, long-grain, regular, enriched, cooked",` : ""}"gramas":180,"kcal":234,"proteina":4.3,"hidratos":51.5,"gordura":0.5,"fibra":0.7,"confianca":"alta|media|baixa","nota":"curta, opcional"}`;
-    return `És nutricionista e especialista em estimar porções a partir de imagens.
+    const intro = said ? `És nutricionista. O utilizador descreveu por escrito (ou ditou) o que comeu numa refeição:
+"""${said}"""
+Separa a descrição em alimentos. Usa as quantidades que ele indicar (unidades, colheres, copos, gramas); quando não indicar, usa porções típicas em Portugal (ex.: 1 pão ~50 g, 1 torrada ~30 g, 1 galão ~250 ml, 1 café ~30 ml). Bebidas contam: usa ml como gramas.
+Se a descrição for ambígua, escolhe a interpretação mais comum e diz em "nota" o que assumiste.
+` : `És nutricionista e especialista em estimar porções a partir de imagens.
 As ${n} imagens ${useInsa ? "a seguir à tabela " : ""}são fotogramas do MESMO prato, tirados enquanto a câmara rodava à volta dele, por ordem temporal.
 Usa as várias perspetivas para estimar o VOLUME de cada componente (altura e profundidade, não só a área vista de cima) e a escala (diâmetro do prato, talheres, mão, copo). Converte volume em peso com densidades típicas do alimento tal como servido.
-${notes ? `Notas do utilizador (prevalecem sobre o que vês): ${notes}\n` : ""}
+${notes ? `Notas do utilizador (prevalecem sobre o que vês): ${notes}\n` : ""}`;
+    return `${intro}
 Para cada componente: nome em português, peso em gramas como servido (cozinhado)${useInsa ? `, "insa" = código da linha da tabela INSA acima que melhor corresponde ao alimento TAL COMO SERVIDO (cozido, frito, grelhado, cru…)` : ""}${useUsda ? `, "usda" = descrição em inglês no estilo da USDA SR Legacy, também no estado em que é servido` : ""}, e a tua estimativa de energia e macronutrientes para ESSE peso.
-${useInsa ? `Em "insa" usa só códigos que existam na tabela; se nenhuma linha servir, usa null. Se o prato for um prato composto da tabela (ex.: "Arroz de pato") e os componentes não se separarem, podes usar um único componente com esse código.\n` : ""}Se for plausível haver gordura de confeção ou molho não visível (azeite, óleo, manteiga, natas), acrescenta um componente separado com a quantidade provável e confiança "baixa".
+${useInsa ? `Em "insa" usa só códigos que existam na tabela; se nenhuma linha servir, usa null. Se o prato for um prato composto da tabela (ex.: "Arroz de pato") e os componentes não se separarem, podes usar um único componente com esse código.\n` : ""}Se for plausível haver gordura de confeção ou molho ${said ? "não mencionado" : "não visível"} (azeite, óleo, manteiga, natas), acrescenta um componente separado com a quantidade provável e confiança "baixa".
 Dá um intervalo realista para as kcal totais, refletindo a incerteza.
 
 Responde APENAS com JSON, sem texto à volta, neste formato:
-{"prato":"nome curto do prato","itens":[${ex}],"kcal_min":0,"kcal_max":0,"avisos":["no máximo 3 avisos curtos"]}
+{"prato":"nome curto ${said ? "da refeição" : "do prato"}","itens":[${ex}],"kcal_min":0,"kcal_max":0,"avisos":["no máximo 3 avisos curtos"]}
 Gramas e macros com 1 casa decimal, kcal inteiras. Texto em português de Portugal.
-Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
+Se não houver comida ${said ? "na descrição" : "nas imagens"}, responde {"erro":"motivo curto"}.`;
   }
   function parseJSON(text){
     try { return JSON.parse(text); } catch {}
@@ -617,25 +646,28 @@ Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
     }
     return (body?.content || []).filter(c=>c.type==="text").map(c=>c.text).join("\n");
   }
-  async function analyze(){
+  // Analisa as fotos, ou (byText) o que foi escrito/ditado na caixa de texto
+  async function analyze(byText){
     const {key, model} = cfg();
     if (!key){ openSettings(); return; }
-    if (!frames.length) return;
+    const said = byText === true ? $("ask").value.trim().slice(0, 1000) : "";
+    if (byText === true ? !said : !frames.length) return;
     setError(""); ctl = new AbortController();
-    $("analyze").disabled = true; $("reset").hidden = true; $("stop").hidden = false;
+    if (said){ stopMic(); $("askSend").disabled = true; }
+    else { $("analyze").disabled = true; $("reset").hidden = true; $("stop").hidden = false; }
     try {
       const mode = tableMode();
       setStatus("A carregar a tabela nutricional…");
       const [insa, usda] = await Promise.all([mode === "insa" || mode === "ambas" ? loadTable("insa") : null, mode === "usda" || mode === "ambas" ? loadTable("usda") : null]);
-      setStatus("A analisar o prato… pode demorar até 1 minuto.");
-      const imgs = await Promise.all(frames.map(blobToB64));
-      const promptText = prompt(frames.length, $("notes").value.trim().slice(0,600), mode), pre = insa ? insaList(insa) : "";
+      setStatus(said ? "A analisar o que escreveste…" : "A analisar o prato… pode demorar até 1 minuto.");
+      const imgs = said ? [] : await Promise.all(frames.map(blobToB64));
+      const promptText = prompt(imgs.length, said ? "" : $("notes").value.trim().slice(0,600), mode, said), pre = insa ? insaList(insa) : "";
       const text = cfg().provider === "claude"
         ? await callClaude(key, model, imgs, promptText, ctl.signal, pre)
         : await callGemini(key, model, imgs, promptText, ctl.signal, pre);
       const data = parseJSON(text);
       if (!data) throw new Error("A resposta veio num formato inesperado. Toca em Analisar para tentar de novo.");
-      if (data.erro) throw new Error("Não identifiquei comida: " + data.erro);
+      if (data.erro) throw new Error((said ? "Não percebi a refeição: " : "Não identifiquei comida: ") + data.erro);
       if (!Array.isArray(data.itens) || !data.itens.length) throw new Error("A resposta não trouxe alimentos. Tenta outra vez.");
       const itens = data.itens.map(normalize);
       const baseKcal = totals(itens).kcal;   // o intervalo da IA refere-se aos valores dela; escala-se com o total final
@@ -652,9 +684,38 @@ Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
     } catch(e){
       if (e?.name !== "AbortError") setError(e?.message === "Failed to fetch" || e?.name === "TypeError" ? "Sem ligação à API. Verifica a internet e tenta outra vez." : (e.message || "Falhou a análise."));
     } finally {
-      setStatus(""); $("analyze").disabled = false; $("reset").hidden = false; $("stop").hidden = true;
+      setStatus(""); $("analyze").disabled = false; $("reset").hidden = false; $("stop").hidden = true; $("askSend").disabled = false;
     }
   }
+
+  // ---------- escrever ou ditar a refeição ----------
+  const ask = $("ask");
+  function askChanged(){
+    ask.style.height = "auto"; ask.style.height = Math.min(ask.scrollHeight, 160) + "px";   // cresce com o texto
+    $("askSend").hidden = !ask.value.trim();
+  }
+  ask.addEventListener("input", askChanged);
+  ask.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing){ e.preventDefault(); analyze(true); } });
+  $("askSend").onclick = () => analyze(true);
+  // Ditado: Web Speech API do browser (Chrome/Safari; o áudio é transcrito pelos servidores da Google/Apple). Sem IA nem custos.
+  const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec = null;
+  function stopMic(){ rec?.stop(); }
+  if (!Speech) $("micBtn").hidden = true;
+  $("micBtn").onclick = () => {
+    if (rec){ rec.stop(); return; }
+    setError("");
+    const before = ask.value.trim();
+    rec = new Speech(); rec.lang = "pt-PT"; rec.interimResults = true; rec.continuous = false;
+    rec.onresult = e => {
+      const heard = [...e.results].map(r => r[0].transcript).join(" ").trim();
+      ask.value = [before, heard].filter(Boolean).join(" "); askChanged();
+    };
+    rec.onerror = e => { if (e.error === "not-allowed" || e.error === "service-not-allowed") setError("Acesso ao microfone recusado. Autoriza o microfone nas definições do browser para este site."); else if (e.error !== "no-speech" && e.error !== "aborted") setError("O ditado falhou (" + e.error + "). Tenta outra vez ou escreve."); };
+    rec.onend = () => { rec = null; $("micBtn").classList.remove("on"); $("micBtn").setAttribute("aria-pressed","false"); };
+    try { rec.start(); $("micBtn").classList.add("on"); $("micBtn").setAttribute("aria-pressed","true"); }
+    catch { rec = null; }
+  };
 
   // ---------- resultado ----------
   function normalize(item){
@@ -1151,7 +1212,7 @@ Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
   $("btnRecFile").onclick = () => $("fileRec").click();
   $("btnPick").onclick = () => $("filePick").click();
   for (const id of ["fileRec","filePick"]) $(id).addEventListener("change", e => { const f = [...(e.target.files||[])]; e.target.value = ""; onFiles(f); });
-  $("analyze").onclick = analyze;
+  $("analyze").onclick = () => analyze(false);
   $("stop").onclick = () => ctl?.abort();
   $("reset").onclick = resetCapture;
   document.addEventListener("visibilitychange", () => { if (document.hidden){ if (stream) camOff(); } else renderDay(); }); // atualiza o aviso de dia longo
