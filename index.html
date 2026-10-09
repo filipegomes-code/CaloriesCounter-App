@@ -1069,10 +1069,10 @@ Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
     try {
       const gis = await loadGIS();
       if (!sync.gisInit){ gis.initialize({ client_id:GOOGLE_CLIENT_ID, callback:onGisCredential, ux_mode:"popup", auto_select:false }); sync.gisInit = true; }
-      // a Google só deixa 3 temas; segue o modo claro/escuro. Largura máxima permitida: 400 px
+      // a Google só deixa 3 temas (branco, azul, preto); usa-se sempre o preto. Largura máxima permitida: 400 px
       const w = Math.min(400, Math.max(200, Math.round($("acctBox").getBoundingClientRect().width) || 300));
       $("gisBtn").replaceChildren();
-      gis.renderButton($("gisBtn"), { theme: matchMedia("(prefers-color-scheme: dark)").matches ? "filled_black" : "outline",
+      gis.renderButton($("gisBtn"), { theme:"filled_black",
         size:"large", text:"signin_with", shape:"pill", locale:"pt-PT", width:w });
     } catch(e){ setSyncStatus(e.message); }
   }
