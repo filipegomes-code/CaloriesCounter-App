@@ -679,6 +679,7 @@ Se não houver comida ${said ? "na descrição" : "nas imagens"}, responde {"err
       });
       current = { prato:String(data.prato||"Prato"), itens, kcal_min:num(data.kcal_min), kcal_max:num(data.kcal_max),
         avisos: Array.isArray(data.avisos) ? data.avisos.slice(0,3).map(String) : [], exemplo:false, baseKcal };
+      if (said) askSent = said;   // o próximo ditado substitui este texto
       renderResult();
       $("result").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block:"start" });
     } catch(e){
@@ -690,6 +691,7 @@ Se não houver comida ${said ? "na descrição" : "nas imagens"}, responde {"err
 
   // ---------- escrever ou ditar a refeição ----------
   const ask = $("ask");
+  let askSent = "";   // último texto analisado com sucesso
   function askChanged(){
     ask.style.height = "auto"; ask.style.height = Math.min(ask.scrollHeight, 160) + "px";   // cresce com o texto
     $("askSend").hidden = !ask.value.trim();
@@ -705,7 +707,8 @@ Se não houver comida ${said ? "na descrição" : "nas imagens"}, responde {"err
   $("micBtn").onclick = () => {
     if (rec){ rec.stop(); return; }
     setError("");
-    const before = ask.value.trim();
+    // se o texto da caixa já foi analisado, é uma refeição nova: substitui; senão acrescenta
+    const before = ask.value.trim() === askSent ? "" : ask.value.trim();
     rec = new Speech(); rec.lang = "pt-PT"; rec.interimResults = true; rec.continuous = false;
     rec.onresult = e => {
       const heard = [...e.results].map(r => r[0].transcript).join(" ").trim();
