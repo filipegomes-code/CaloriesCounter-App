@@ -261,7 +261,7 @@ dialog form{padding:18px;display:flex;flex-direction:column;gap:14px}
     <div id="acctBox" style="display:flex;flex-direction:column;gap:8px" hidden>
       <div class="eyebrow">Conta e sincronização</div>
       <p class="small" id="acctText"></p>
-      <div id="gisBtn" style="min-height:44px" hidden></div>
+      <div id="gisBtn" style="min-height:44px;display:flex;justify-content:center" hidden></div>
       <button class="btn btn-ghost btn-sm" type="button" id="acctBtn"></button>
       <div class="rule"></div>
     </div>
@@ -345,6 +345,7 @@ dialog form{padding:18px;display:flex;flex-direction:column;gap:14px}
     $("cldKey").value = ls.get("pal-cld-key",""); $("cldModel").value = ls.get("pal-cld-model","claude-sonnet-5-5");
     $("tableSel").value = tableMode();
     showProviderFields(); $("settings").showModal();
+    if (!$("gisBtn").hidden) showGisButton();   // desenha o botão da Google já com a largura real
   }
   $("provider").onchange = showProviderFields;
   $("openSettings").onclick = openSettings; $("openSettings2").onclick = openSettings;
@@ -1068,7 +1069,11 @@ Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
     try {
       const gis = await loadGIS();
       if (!sync.gisInit){ gis.initialize({ client_id:GOOGLE_CLIENT_ID, callback:onGisCredential, ux_mode:"popup", auto_select:false }); sync.gisInit = true; }
-      gis.renderButton($("gisBtn"), { theme:"outline", size:"large", text:"signin_with", shape:"pill", locale:"pt-PT", width:280 });
+      // a Google só deixa 3 temas; segue o modo claro/escuro. Largura máxima permitida: 400 px
+      const w = Math.min(400, Math.max(200, Math.round($("acctBox").getBoundingClientRect().width) || 300));
+      $("gisBtn").replaceChildren();
+      gis.renderButton($("gisBtn"), { theme: matchMedia("(prefers-color-scheme: dark)").matches ? "filled_black" : "outline",
+        size:"large", text:"signin_with", shape:"pill", locale:"pt-PT", width:w });
     } catch(e){ setSyncStatus(e.message); }
   }
   async function onGisCredential(resp){
@@ -1085,7 +1090,7 @@ Se não houver comida nas imagens, responde {"erro":"motivo curto"}.`;
     $("acctBox").hidden = !FIREBASE_CONFIG; if (!FIREBASE_CONFIG) return;
     const gis = GOOGLE_CLIENT_ID && !sync.user;
     $("gisBtn").hidden = !gis; $("acctBtn").hidden = !!gis;
-    if (gis && !$("gisBtn").childElementCount) showGisButton();
+    if (gis && !$("gisBtn").childElementCount && $("settings").open) showGisButton();
     $("acctText").textContent = sync.status || (sync.user ? `Sincronizado com ${sync.user.email}. Os dias e as refeições ficam iguais em todos os aparelhos onde entrares.` : "Entra com a tua conta Google para veres os mesmos dias no telemóvel e no PC. Sem entrar, os dados ficam só neste aparelho. A chave da IA nunca é sincronizada.");
     $("acctBtn").textContent = sync.user ? "Sair" : "Entrar com Google";
     $("syncLine").hidden = !sync.user && !sync.status;
