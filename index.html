@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Prato à Lupa">
+<script>try{const t=localStorage.getItem("pal-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch{}</script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -25,13 +26,23 @@
   --f-num:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;
   color-scheme:light;
 }
-@media (prefers-color-scheme: dark){:root{
+/* Tema: automático (segue o sistema) ou escolhido nas definições (data-theme) */
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#0F1513; --surface:#18201D; --sunk:#121916; --ink:#E6EDE8; --muted:#93A29A; --line:#2A3531;
   --accent:#3FC59B; --accent-ink:#06251B;
   --prot:#8A9DF5; --carb:#F0B73A; --fat:#EE7FA0;
   --warn-bg:#3A2F10; --warn-ink:#F3D68A; --err-bg:#3D1720; --err-ink:#F7B3C2;
   color-scheme:dark;
 }}
+:root[data-theme="dark"]{
+  --bg:#0F1513; --surface:#18201D; --sunk:#121916; --ink:#E6EDE8; --muted:#93A29A; --line:#2A3531;
+  --accent:#3FC59B; --accent-ink:#06251B;
+  --prot:#8A9DF5; --carb:#F0B73A; --fat:#EE7FA0;
+  --warn-bg:#3A2F10; --warn-ink:#F3D68A; --err-bg:#3D1720; --err-ink:#F7B3C2;
+  color-scheme:dark;
+}
+/* o botão da Google é um iframe claro: sem isto o browser pinta-lhe um fundo branco no modo escuro */
+#gisBtn iframe{color-scheme:light}
 *{box-sizing:border-box}
 html,body{margin:0}
 body{background:var(--bg);color:var(--ink);font:15px/1.5 var(--f-body);-webkit-font-smoothing:antialiased;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -298,6 +309,13 @@ dialog form{padding:18px;display:flex;flex-direction:column;gap:14px}
     </div>
     <p class="small">As chaves ficam guardadas só neste telemóvel e só são enviadas para o serviço escolhido.</p>
     <div class="rule"></div>
+    <label class="field">Tema
+      <select id="themeSel">
+        <option value="auto">Automático (segue o sistema)</option>
+        <option value="dark">Escuro</option>
+        <option value="light">Claro</option>
+      </select>
+    </label>
     <label class="field">Tabela nutricional
       <select id="tableSel">
         <option value="ambas">INSA, e USDA quando faltar (recomendado)</option>
@@ -336,6 +354,7 @@ dialog form{padding:18px;display:flex;flex-direction:column;gap:14px}
       ? { provider, key: ls.get("pal-cld-key",""), model: ls.get("pal-cld-model","claude-sonnet-5-5") }
       : { provider, key: ls.get("pal-gem-key",""), model: ls.get("pal-gem-model","gemini-3.8-flash") };
   };
+  function applyTheme(){ const t = ls.get("pal-theme","auto"); if (t === "auto") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t; }
   const tableMode = () => { const t = ls.get("pal-table","ambas"); return ["ambas","insa","usda","ia"].includes(t) ? t : "ambas"; };
   function refreshKeyNotice(){ $("needKey").hidden = !!cfg().key; }
   function showProviderFields(){ const g = $("provider").value === "gemini"; $("gemFields").hidden = !g; $("cldFields").hidden = g; }
@@ -344,6 +363,7 @@ dialog form{padding:18px;display:flex;flex-direction:column;gap:14px}
     $("gemKey").value = ls.get("pal-gem-key",""); $("gemModel").value = ls.get("pal-gem-model","gemini-3.8-flash");
     $("cldKey").value = ls.get("pal-cld-key",""); $("cldModel").value = ls.get("pal-cld-model","claude-sonnet-5-5");
     $("tableSel").value = tableMode();
+    $("themeSel").value = ls.get("pal-theme","auto");
     showProviderFields(); $("settings").showModal();
     if (!$("gisBtn").hidden) showGisButton();   // desenha o botão da Google já com a largura real
   }
@@ -355,6 +375,7 @@ dialog form{padding:18px;display:flex;flex-direction:column;gap:14px}
       ls.set("pal-gem-key", $("gemKey").value.trim()); ls.set("pal-gem-model", $("gemModel").value);
       ls.set("pal-cld-key", $("cldKey").value.trim()); ls.set("pal-cld-model", $("cldModel").value);
       ls.set("pal-table", $("tableSel").value); saveDb();
+      ls.set("pal-theme", $("themeSel").value); applyTheme();
     }
     refreshKeyNotice();
   });
