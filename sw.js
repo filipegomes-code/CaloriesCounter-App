@@ -1,5 +1,5 @@
 // Guarda a app em cache para abrir rápido; a análise precisa sempre de internet.
-const CACHE = "prato-a-lupa-v10";
+const CACHE = "prato-a-lupa-v11";
 const FILES = ["./", "index.html", "manifest.webmanifest", "icon.svg", "icon-180.png", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", e => {
