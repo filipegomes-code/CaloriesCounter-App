@@ -4,7 +4,7 @@ Ficheiro lido automaticamente pelo Claude Code em cada sessão (local ou claude.
 Mantém-no atualizado quando algo importante mudar. Estado descrito: 2026-10-09.
 
 ## Quem é o utilizador e como trabalhar
-- Filipe, estudante de Engenharia Informática (ISEC). Escreve em **português europeu**, informal.
+- Filipe, estudante de Engenharia Informática. Escreve em **português europeu**, informal.
 - Respostas **concisas, diretas e técnicas**. Explica o porquê quando introduzires ferramentas ou conceitos novos (ele pergunta muito "porquê?" — explica o mecanismo por baixo, com exemplos concretos).
 - **Não começar fases novas sem ele confirmar.** Dizer sempre o que não foi possível testar.
 - Uso pessoal, **custo zero** é requisito.
